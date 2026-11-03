@@ -62,7 +62,7 @@ class AtATerminal(unittest.TestCase):
         text = "x" * 45
         screen.ok(text)
         screen.done(text)
-        self.assertEqual(len(self.plain().strip().splitlines()), 2, self.plain())
+        self.assertEqual(len([line for line in self.plain().splitlines() if line.strip()]), 2, self.plain())
 
     def test_a_long_ok_line_lines_up_under_its_words(self):
         screen.ok("word " * 30)
