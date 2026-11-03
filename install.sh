@@ -1,5 +1,5 @@
 #!/bin/sh
-# Prompt Peon setup for Linux and Steam Deck. Run it from a terminal: sh install.sh
+# Prompt Peon setup for Linux and SteamOS. Run it from a terminal: sh install.sh
 HERE=$(cd "$(dirname "$0")" && pwd) || exit 1
 # A newer one can sit next to an older python3, which is common on Linux.
 PYTHON=$(command -v python3.15 || command -v python3.14 || command -v python3) || {

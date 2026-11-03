@@ -4,9 +4,9 @@ This guide takes you from nothing to your threads in WoW's quest log. It takes a
 
 You need:
 
-- **WoW:** Classic Era, retail or WoW Forever, on Windows, Linux or a Steam Deck.
+- **WoW:** Classic Era, retail or WoW Forever, on Windows, Linux or SteamOS.
 - **T3 Code:** running on the machine your threads are on, which can be a different machine from the game.
-- **Python 3.14 or newer on the game machine.** On Windows the installer gets it for you if it's missing or older. On Linux and the Deck you install it yourself.
+- **Python 3.14 or newer on the game machine.** On Windows the installer gets it for you if it's missing or older. On Linux and SteamOS you install it yourself.
 - **The game closed** while you run the installer.
 
 ## 1. Pick your route
@@ -30,7 +30,7 @@ Do this on the game machine. For the T3 Connect route, do it on the T3 machine t
 2. Under **Assets**, download `prompt-peon-<version>.zip`.
 3. If you want to check it, download `SHA256SUMS.txt` too, and compare its number with what this prints in the folder you downloaded to:
    - **Windows:** `certutil -hashfile prompt-peon-<version>.zip SHA256`
-   - **Linux or Steam Deck:** `sha256sum prompt-peon-<version>.zip`
+   - **Linux or SteamOS:** `sha256sum prompt-peon-<version>.zip`
    - **Mac:** `shasum -a 256 prompt-peon-<version>.zip`
 4. Unpack the ZIP into a new folder. On Windows, right-click it and choose **Extract All**, because the installer won't work from inside the ZIP preview.
 
@@ -70,7 +70,7 @@ This command can't find T3 Connect on a Windows T3 machine yet. Use Tailscale th
 
 ### SSH tunnel
 
-This is how a Steam Deck can reach a Mac. It makes T3 look local to the game machine, so that machine must not be running T3 itself.
+This is how a Steam Machine can reach a Mac. It makes T3 look local to the game machine, so that machine must not be running T3 itself.
 
 1. On the T3 machine, start the tunnel and leave it running. Replace `game-machine` with yours:
    ```
@@ -85,7 +85,7 @@ If the tunnel stops, the game loses T3. Start the tunnel again and the companion
 On the game machine:
 
 - **Windows:** double-click `install.cmd` in the unpacked folder.
-- **Linux or Steam Deck:** open a terminal in the unpacked folder and run `sh install.sh`. On the Deck, use Desktop Mode.
+- **Linux or SteamOS:** open a terminal in the unpacked folder and run `sh install.sh`. On SteamOS, use Desktop Mode.
 
 When it asks, paste your link, or press Enter if your threads are on this machine. There are no commands to copy.
 
@@ -148,7 +148,7 @@ Done. Start the game, or restart it if it is open, and type /peon.
 When there's a new version, the game says so in chat. It doesn't update by itself.
 
 1. Close WoW.
-2. Run the installer again: `%LOCALAPPDATA%\\prompt-peon\\install.cmd` on Windows, or `sh ~/.local/share/prompt-peon/install.sh` on Linux and the Deck. It gets the newest release from GitHub by itself, keeps your link and your answers, and asks only what it needs to.
+2. Run the installer again: `%LOCALAPPDATA%\\prompt-peon\\install.cmd` on Windows, or `sh ~/.local/share/prompt-peon/install.sh` on Linux and SteamOS. It gets the newest release from GitHub by itself, keeps your link and your answers, and asks only what it needs to.
 3. Start the game.
 
 Game patches take care of themselves. If T3 updates and something stops working, get the newest Prompt Peon.

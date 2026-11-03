@@ -11,7 +11,7 @@ Out of the game: AddOns.txt. The game rewrites it the moment the addon saves its
 list, so 96 "send" addons work as 96 bits per write, with no reload and nothing shown.
 SavedVariables is the fallback for a reply that could not get out that way.
 
-Stdlib only, because this has to run on a stock Steam Deck or a Windows PC with nothing
+Stdlib only, because this has to run on a stock SteamOS machine or a Windows PC with nothing
 but Python on it. The token lives in the user's config folder and is never written
 anywhere the game can read.
 

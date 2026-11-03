@@ -5,7 +5,7 @@ import math
 import re
 
 
-LUA_UNSAFE = re.compile(rb'[^\x20-\x7e]|["\\]')  # A regex, because snapshots run to megabytes and a Deck is slow.
+LUA_UNSAFE = re.compile(rb'[^\x20-\x7e]|["\\]')  # A regex, because snapshots run to megabytes.
 LUA_ESCAPES = {bytes([byte]): (f"\\{chr(byte)}" if byte in (0x22, 0x5C) else f"\\{byte:03d}").encode() for byte in range(256)}
 
 

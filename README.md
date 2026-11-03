@@ -43,7 +43,7 @@ You need WoW and T3 Code. On Windows the installer gets Python for you. On Linux
 1. Read [the warning below](#before-you-use-it). Then download `prompt-peon-<version>.zip` from [the newest release](https://github.com/svenmeys/prompt-peon/releases/latest), and from nowhere else, and unpack it.
 2. Close WoW, and start the installer:
    - **Windows:** double-click `install.cmd`. If Windows warns about a downloaded file, press **More info**, then **Run anyway**.
-   - **Linux or Steam Deck:** open a terminal in that folder and run `sh install.sh`.
+   - **Linux or SteamOS:** open a terminal in that folder and run `sh install.sh`.
 3. Answer its questions. If your threads are on another machine, it asks for a link from that machine. When unsure, the safe answer is no.
 4. Start the game and type `/peon`.
 
@@ -84,12 +84,13 @@ Early. So far one person has used it.
 
 | Setup | State |
 | --- | --- |
-| Classic Era 1.15.9 on a Steam Deck (Proton, Desktop Mode), T3 on another machine | Works, tested in the real game |
-| Retail 12.1.5 on a Steam Deck | Runs in the real game: the log, live updates, party frames and tracker. Sending from the game isn't tested there yet |
+| Classic Era 1.15.9 on a Steam Machine (Proton, Desktop Mode), T3 on another machine | Works, tested in the real game |
+| Retail 12.1.5 on a Steam Machine | Runs in the real game: the log, live updates, party frames and tracker. Sending from the game isn't tested there yet |
 | WoW Forever 1.60.1 | Installs and shows in the character screen's addon list, but not yet run in the game, because its servers aren't open |
 | Windows | Installed and used by the author. A full check is still to come |
 | Reaching T3 on another machine | An SSH tunnel is in daily use. T3 Connect is tested from a Mac, and a full run from Windows is still to come. Tailscale hasn't run through the installer |
-| Steam Deck Gaming Mode | Not tested |
+| Steam Machine Gaming Mode | Not tested |
+| Steam Deck | Not tested |
 | macOS | Not supported |
 
 Tested against T3 nightly 0.1.7. T3's remote API isn't public, so a T3 update can break this. If it does, the game tells you, and the threads you had stay on screen until it's fixed.

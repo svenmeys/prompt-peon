@@ -84,7 +84,7 @@ The catch is that each helper only loads once per UI session. That makes refresh
 | Waiting for something you just asked for | 5 seconds |
 | In combat | Paused |
 
-A load takes about 6 ms on the Steam Deck, measured once, so the cost of going faster is reloads and not frame rate.
+A load takes about 6 ms on a Steam Machine, measured once, so the cost of going faster is reloads and not frame rate.
 
 **What's in a snapshot.** `Snapshot.lua` is one assignment, `PROMPTPEON_SNAPSHOT = {...}`, rendered by `lua_value()` so that text stays data. It holds up to 30 open threads in `threads`, up to 30 settled plus every snoozed thread in `pk`, delivery results in `ack` and `res`, and the model list in `md`. Things you opened, like a diff, ride along for 60 seconds, and the addon keeps them. `sid` and `rv` let the addon ignore an older write from the same run. `at` shows the companion app is alive, so unchanged data is still rewritten every 30 seconds.
 
