@@ -25,7 +25,7 @@ The icons, from the left: Changes, Agents, Hide, Snooze, Track, Stop. Turn in ta
 - **Steer, edit or cancel** a message that's still queued.
 - **Changes:** what a thread changed, file by file, in a colored diff.
 - **Agents:** the subagents a thread sent out, what they were asked and what they came back with.
-- **Pull requests:** every PR linked to a thread, with its state, CI, review and line counts. Click one to read its summary, checks, discussion and timeline. Bot comments stay folded until you ask. Reading only: you reply on GitHub.
+- **Pull requests:** every PR linked to a thread, with its state, CI, review and line counts. Click one to read its summary, checks, its own changed files, discussion and timeline. Bot comments stay folded until you ask. Reading only: you reply on GitHub.
 - **Snooze** a thread until later, and **turn in** a finished one. Both move to a group at the bottom of the list, under their project. Turn in asks first. Nothing in the game tells an agent to push.
 
 ![The snooze menu: For 1 hour, For 4 hours, Until tomorrow morning, Until Monday morning.](images/snooze.png)
