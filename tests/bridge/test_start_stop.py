@@ -57,6 +57,7 @@ class TheSwitch(Base):
 
     def test_when_it_is_stopped_the_installed_copy_starts_on_linux(self):
         self.patched(settings, "IS_WINDOWS", False)
+        self.patched(processes, "acquire_lock", return_value=mock.Mock())
         self.assertEqual(autostart.start_stop(), "The companion app is running.")
         self.start_linux.assert_called_once_with(self.script)
         self.stop_autostart.assert_not_called()

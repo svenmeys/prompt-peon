@@ -1,4 +1,5 @@
-"""The installer's one update check. The companion app itself never updates, and nothing in the game can ask it to."""
+"""Newer releases. The installer fetches one when you run it. The companion app only asks whether one exists, so the game can
+say so: it never updates itself, and nothing in the game can ask it to."""
 from __future__ import annotations
 
 import io
@@ -9,10 +10,11 @@ import stat
 import subprocess
 import sys
 import tempfile
+import time
 import zipfile
 from pathlib import Path
 
-from . import settings, t3remote
+from . import console, settings, t3remote
 
 
 def latest_release() -> str:
@@ -23,6 +25,37 @@ def latest_release() -> str:
     if not isinstance(tag, str) or not re.fullmatch(r"v\d+\.\d+\.\d+", tag):
         raise ValueError(f"the newest release has a strange name: {tag}")
     return tag[1:]
+
+
+def is_newer(version: str) -> bool:
+    numbers = lambda text: tuple(int(part) for part in text.split("."))
+    return numbers(version) > numbers(settings.VERSION)
+
+
+def update_notice(version: str) -> str:
+    """Fixed words around a number that latest_release checked, so nothing from GitHub reaches the game but that."""
+    if settings.IS_WINDOWS:
+        return f"Prompt Peon {version} is out. Close WoW, then double-click install.cmd in %LOCALAPPDATA%\\prompt-peon."
+    return f"Prompt Peon {version} is out. Close WoW, then run: sh ~/.local/share/prompt-peon/install.sh"
+
+
+def check_for_newer(bridge) -> None:
+    """Note a newer release for the game to mention. It only asks: nothing gets downloaded or run."""
+    try:
+        latest = latest_release()
+        bridge.newer_release = latest if is_newer(latest) else None
+    except Exception as error:  # GitHub being away is nobody's problem.
+        console.log(f"couldn't ask GitHub about new versions: {type(error).__name__}: {str(error)[:200]}")
+
+
+def watch_for_releases(bridge, game_open) -> None:
+    """Runs in its own thread, because GitHub can take a minute to not answer, and that mustn't hold up replies."""
+    next_check = 0.0
+    while True:
+        time.sleep(settings.GAME_CHECK_SECONDS)
+        if game_open() and time.monotonic() >= next_check:
+            next_check = time.monotonic() + settings.UPDATE_CHECK_SECONDS
+            check_for_newer(bridge)
 
 
 def download_release(version: str) -> bytes:
@@ -63,13 +96,12 @@ def unpack_latest(data: bytes, target: Path) -> str:
 def use_the_latest(arguments: list[str]) -> None:
     """Hand over to a newer release from GitHub if there is one. Only the installer does this, and only when
     you run it yourself: the companion app never updates itself, and nothing in the game folder can ask it to."""
-    numbers = lambda version: tuple(int(part) for part in version.split("."))
     print("Checking GitHub for a newer version...")
     folder = None
     try:
         try:
             latest = latest_release()
-            if numbers(latest) <= numbers(settings.VERSION):
+            if not is_newer(latest):
                 print("You have the newest version.\n")
                 return
             folder = Path(tempfile.mkdtemp(prefix="promptpeon-update-"))

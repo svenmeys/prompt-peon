@@ -32,6 +32,7 @@ UPDATE_API = f"https://api.github.com/repos/{UPDATE_REPO}/releases/latest"
 UPDATE_ZIP = f"https://codeload.github.com/{UPDATE_REPO}/zip/refs/tags/v{{version}}"
 INSTALL_PYTHON = (3, 14)  # The newest one winget has, with no known CVEs. A test keeps install.cmd and CI equal to this.
 UPDATE_SECONDS = 60
+UPDATE_CHECK_SECONDS = 30 * 60  # How often the app asks whether a newer release exists, while the game is open.
 MAX_UPDATE_BYTES = 30 * 1024 * 1024  # Unpacked. The real thing is under 1 MB.
 UPDATE_PARTS = {"addon", "bridge", "install.cmd", "uninstall.cmd", "start-stop.cmd", "install.sh", "uninstall.sh", "start-stop.sh"}  # What the installer uses.
 MAX_THREADS = 30

@@ -5,8 +5,8 @@ The small program that runs next to WoW and talks to T3 for the addon. This page
 ## In short
 
 - It's Python 3.14 or newer, standard library only, with nothing else to install.
-- It only talks to the one T3 address you gave it. There's no telemetry, no update check and no other server. Only the installer checks for updates, and only when you run it yourself. It ignores proxy settings and refuses redirects, so your token can't be sent somewhere else.
-- It only talks to T3 while WoW is running.
+- It talks to the one T3 address you gave it, and to GitHub for one thing: while the game is open, it asks every 30 minutes whether a newer release exists, so the game can tell you. Nothing of yours goes with that, and it never downloads anything. Updating is still you running the installer. There's no telemetry and no other server. It ignores proxy settings and refuses redirects, so your token can't be sent somewhere else.
+- It only talks to T3 and GitHub while WoW is running.
 - When the game closes, it clears your thread text, drafts and unsent messages from the game folder. If T3 can't be reached, an unsent message gets two minutes to go first, and the next session tells you if it was lost.
 - While an addon you haven't trusted is installed, no thread text goes in the game folder at all.
 - You can remove all of it with one command.
@@ -39,7 +39,7 @@ It doesn't read anything else in your WoW folder, except the list of addon folde
 
 ## What it sends, and to whom
 
-All of it goes to the T3 address you gave it, with your token. Over an `https://` address or an SSH tunnel it's encrypted. Over plain `http://` on a network it isn't, and the installer asks before accepting that.
+Except for that question to GitHub, all of it goes to the T3 address you gave it, with your token. Over an `https://` address or an SSH tunnel it's encrypted. Over plain `http://` on a network it isn't, and the installer asks before accepting that.
 
 | When | What it asks T3 | Why |
 | --- | --- | --- |

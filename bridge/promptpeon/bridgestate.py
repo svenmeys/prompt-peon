@@ -20,6 +20,7 @@ class Bridge:
         self.config_path = config_path or settings.CONFIG_DIR / "config.json"
         self.closed_at: float | None = None  # When the game closed, on the monotonic clock.
         self.game_closed = False  # Nothing with words in it goes in the game folder then.
+        self.newer_release: str | None = None  # A newer version on GitHub, for the game to mention.
         self.read_times: list[float] = []
         self.addon_copy: Path | None = None  # Our own copy of the addon, to compare the installed one with.
         self.loaded: dict = {}  # Thread id -> a diff or agent reports you opened, for a minute.

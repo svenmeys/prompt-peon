@@ -8,7 +8,7 @@ Prompt Peon lets a game addon send real messages to real agents. This page says 
 - **Turn an agent's words into code in the game.** They're only ever shown as text.
 - **Send to an agent that acts without asking,** or start one, unless you said yes to that. You can still stop it and turn it in.
 - **Cast a spell without asking.** A spell shows its exact words first, unless you turn that off in Options. No spell tells an agent to push.
-- **Talk to anything except your T3.** The one exception is the installer's update check below.
+- **Talk to anything except your T3 and GitHub.** While the game is open it asks GitHub every 30 minutes whether a newer release exists, and chat tells you if so. It sends nothing of yours and downloads nothing.
 - **Keep your words after you close the game.** Thread text, drafts and unsent messages are cleared from the game folder. While you play, they sit there as plain text. Encrypting them wouldn't help, because the key would have to be in the game too.
 
 ## What you have to watch
@@ -22,7 +22,7 @@ Prompt Peon lets a game addon send real messages to real agents. This page says 
 
 ## Updates and downloads
 
-- **The installer updates itself.** When you run it, it asks GitHub for this repository's newest release and hands over to it if it's newer, without asking. So whoever controls this repository controls what your next install runs. Nothing of yours goes with the request, and published releases can't be changed afterwards. The companion app and the game never trigger this. `--no-update` skips it.
+- **The installer updates itself.** When you run it, it asks GitHub for this repository's newest release and hands over to it if it's newer, without asking. So whoever controls this repository controls what your next install runs. Nothing of yours goes with the request, and published releases can't be changed afterwards. The companion app and the game never start it. They only tell you it's there. `--no-update` skips it.
 - **The download.** Get it only from this repository. Every release carries its zip and a `SHA256SUMS.txt`, and [the install guide](INSTALL.md#2-download-it) says how to compare them. That catches a damaged copy, or one that someone changed after it left here. It can't catch someone who controls this repository.
 
 ## Reporting a problem

@@ -127,6 +127,8 @@ function ns:Ingest()
   if self.Chat and self.db then
     if snapshot.lk and snapshot.lk ~= self.withheldSaid then self.Chat:ReportReload(self.Plain(snapshot.lk)) end
     self.withheldSaid = snapshot.lk
+    if snapshot.up and snapshot.up ~= self.updateSaid then self.Chat:ReportReload(self.Plain(snapshot.up)) end
+    self.updateSaid = snapshot.up
     local cleared = snapshot.clr
     if cleared and cleared.at ~= self.db.clearedAt then
       self.db.clearedAt = cleared.at

@@ -15,6 +15,88 @@ from bridge_helpers import Base, ROOT
 from promptpeon import cli, settings, t3remote, updater
 
 
+class TheGameGetsTold(Base):
+    """While the game is open the app asks whether a newer release exists. It only ever asks."""
+
+    def bridge_with_release(self, tag_or_error):
+        bridge = mock.Mock(newer_release=None)
+        side = {"side_effect": tag_or_error} if isinstance(tag_or_error, Exception) else {"return_value": tag_or_error}
+        patcher = mock.patch.object(updater, "latest_release", **side)
+        self.addCleanup(patcher.stop)
+        patcher.start()
+        return bridge
+
+    def test_a_newer_release_is_noted(self):
+        bridge = self.bridge_with_release("99.0.0")
+        updater.check_for_newer(bridge)
+        self.assertEqual(bridge.newer_release, "99.0.0")
+
+    def test_numbers_compare_as_numbers(self):
+        with mock.patch.object(settings, "VERSION", "0.9.0"):
+            self.assertTrue(updater.is_newer("0.10.0"))
+            self.assertFalse(updater.is_newer("0.9.0"))
+            self.assertFalse(updater.is_newer("0.8.9"))
+
+    def test_the_same_or_an_older_one_is_not(self):
+        for version in (settings.VERSION, "0.0.1"):
+            bridge = self.bridge_with_release(version)
+            updater.check_for_newer(bridge)
+            self.assertIsNone(bridge.newer_release, version)
+
+    def test_github_being_away_bothers_nobody_and_keeps_what_it_knew(self):
+        bridge = self.bridge_with_release(urllib.error.URLError("away"))
+        bridge.newer_release = "99.0.0"
+        updater.check_for_newer(bridge)
+        self.assertEqual(bridge.newer_release, "99.0.0")
+
+    def test_it_never_downloads_or_runs_anything(self):
+        bridge = self.bridge_with_release("99.0.0")
+        with mock.patch.object(updater, "download_release") as download, mock.patch.object(subprocess, "run") as run:
+            updater.check_for_newer(bridge)
+        download.assert_not_called()
+        run.assert_not_called()
+
+    def test_the_notice_says_what_to_run(self):
+        with mock.patch.object(settings, "IS_WINDOWS", True):
+            self.assertEqual(updater.update_notice("9.9.9"), "Prompt Peon 9.9.9 is out. Close WoW, then double-click install.cmd in %LOCALAPPDATA%\\prompt-peon.")
+        with mock.patch.object(settings, "IS_WINDOWS", False):
+            self.assertEqual(updater.update_notice("9.9.9"), "Prompt Peon 9.9.9 is out. Close WoW, then run: sh ~/.local/share/prompt-peon/install.sh")
+
+    def watch(self, game_open, clock):
+        """Runs the watcher for one wake-up per clock reading, and says how often it asked GitHub."""
+        class Done(Exception):
+            pass
+        readings = iter(clock)
+        now = [0]
+
+        def sleep(_seconds):
+            try:
+                now[0] = next(readings)
+            except StopIteration:
+                raise Done from None
+
+        # Only this module's clock, because the real one is shared with every other thread.
+        fake_time = mock.Mock(sleep=sleep, monotonic=lambda: now[0])
+        with mock.patch.object(updater, "time", fake_time), mock.patch.object(updater, "latest_release", return_value="99.0.0") as asked:
+            with self.assertRaises(Done):
+                updater.watch_for_releases(mock.Mock(newer_release=None), game_open)
+        return asked.call_count
+
+    def test_with_the_game_closed_github_is_never_asked(self):
+        self.assertEqual(self.watch(lambda: False, [0, 1, 2]), 0)
+
+    def test_it_asks_once_every_thirty_minutes_while_the_game_is_open(self):
+        half_hour = settings.UPDATE_CHECK_SECONDS
+        self.assertEqual(self.watch(lambda: True, [0, 1, half_hour - 1, half_hour, half_hour + 1]), 2)
+
+    def test_a_snapshot_carries_the_notice_only_when_there_is_one(self):
+        from promptpeon import publishing
+
+        self.assertIn("up", publishing.update_fields("9.9.9"))
+        self.assertIn("9.9.9", publishing.update_fields("9.9.9")["up"])
+        self.assertEqual(publishing.update_fields(None), {})
+
+
 class InstallerFetchesLatest(Base):
     """Running the installer by hand gets the newest release from GitHub, and nothing else ever does."""
 

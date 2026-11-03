@@ -4,7 +4,11 @@ from __future__ import annotations
 import json
 import time
 
-from . import console, gates, pullrequests, safefiles, settings, snapshots, threadstate
+from . import console, gates, pullrequests, safefiles, settings, snapshots, threadstate, updater
+
+
+def update_fields(newer_release: str | None) -> dict:
+    return {"up": updater.update_notice(newer_release)} if newer_release else {}
 
 
 def publish(bridge) -> None:
@@ -27,6 +31,7 @@ def publish(bridge) -> None:
         ack=bridge.state["ack"], results=bridge.state["results"], previous=bridge.snapshot,
         hidden=bridge.state["hidden"],
     )
+    snapshot.update(update_fields(bridge.newer_release))
     for thread_id, extra in list(bridge.loaded.items()):
         if time.monotonic() >= extra["until"]:
             del bridge.loaded[thread_id]

@@ -52,14 +52,14 @@ The addon tests use a stubbed client. They prove logic, not drawing. `check_api.
 - **The companion app decides, not the addon.** Any addon can do what ours does, so a check in Lua protects against mistakes, not against another addon. A real limit goes in the companion app.
 - **A new thing the game can ask for** goes through the gate on other addons, the rate limits and, if it reaches an agent, the full access check. Add a test for each.
 - **Never write through a link.** Use the existing write helpers.
-- **Nothing silently leaves the machine.** The companion app's only network address is the T3 you connected to. The installer also asks GitHub for the newest release, when you run it yourself. Nothing else goes anywhere.
+- **Nothing silently leaves the machine.** The companion app talks to the T3 you connected to, and asks GitHub whether a newer release exists. Only the installer downloads one, when you run it yourself. Nothing else goes anywhere.
 - **Plain words.** Anything a player reads should make sense to someone who doesn't know what a thread is. Say what to do next, not what went wrong inside.
 
 ## What we won't merge
 
-- New dependencies, or anything new that downloads and runs code. The installer's release check is the one exception.
+- New dependencies, or anything new that downloads and runs code. The installer's update is the one exception.
 - Binary or minified files.
-- Telemetry, more update checks or any new server.
+- Telemetry, more kinds of update check, automatic updates or any new server.
 - Features without that yes, rewrites, and tidying nobody asked for.
 - Approving an agent's actions from the game. Approvals stay in T3.
 - Anything that plays the game for you, or asks for donations in the game. Blizzard's addon rules forbid the second, and we won't do the first.

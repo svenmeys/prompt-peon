@@ -3672,6 +3672,17 @@ do
   arrive({ threads = { { id = THREAD, p = "Shop", t = "A secret-free name", s = "done", u = time(), m = { { "a", "the words are back" } } } } })
   check("saying yes brings them back", lineWith("the words are back"))
 
+  -- A newer release is mentioned in the main chat, once. The update itself stays something you run.
+  local UPDATE = "Prompt Peon 9.9.9 is out. Close WoW, then double-click install.cmd in %LOCALAPPDATA%\\prompt-peon."
+  PromptPeonDB.chatNewsOff = true
+  arrive({ up = UPDATE })
+  PromptPeonDB.chatNewsOff = nil
+  check("chat says a new version is out, even with news off", chatCount(UPDATE) == 1, chatCount("9.9.9"))
+  arrive({ up = UPDATE })
+  check("and not on every refresh", chatCount(UPDATE) == 1, chatCount("9.9.9"))
+  arrive({ up = "Prompt Peon 9.9.10 is out. |cffff0000Close|r WoW." })
+  check("a newer one is told about too, and it can't color chat", chatCount("Prompt Peon 9.9.10 is out. ||cffff0000Close||r WoW.") == 1)
+
   -- A message that couldn't go before the game closed is told about once, and only once.
   PromptPeonDB.clearedAt = nil
   arrive({ clr = { n = 2, at = 12345 } })

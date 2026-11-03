@@ -5,7 +5,7 @@ import queue
 import threading
 import time
 
-from . import addonfiles, console, delivery, frames, processes, publishing, refreshing, settings
+from . import addonfiles, console, delivery, frames, processes, publishing, refreshing, settings, updater
 
 
 def run(bridge, *, always: bool = False) -> None:
@@ -33,6 +33,8 @@ def run(bridge, *, always: bool = False) -> None:
     next_version_check = time.monotonic() + settings.VERSION_CHECK_SECONDS
     was_running = False
     running = False
+    if not always:  # That's for testing by hand, and asks for T3 only.
+        threading.Thread(target=updater.watch_for_releases, args=(bridge, lambda: running), daemon=True, name="releases").start()
     while True:
         now = time.monotonic()
         if now >= next_game_check:

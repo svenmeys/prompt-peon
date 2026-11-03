@@ -145,6 +145,8 @@ Done. Start the game, or restart it if it is open, and type /peon.
 
 ## Update
 
+When there's a new version, the game says so in chat. It doesn't update by itself.
+
 1. Close WoW.
 2. Run the installer again: `%LOCALAPPDATA%\\prompt-peon\\install.cmd` on Windows, or `sh ~/.local/share/prompt-peon/install.sh` on Linux and the Deck. It gets the newest release from GitHub by itself, keeps your link and your answers, and asks only what it needs to.
 3. Start the game.

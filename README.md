@@ -47,7 +47,7 @@ You need WoW and T3 Code. On Windows the installer gets Python for you. On Linux
 3. Answer its questions. If your threads are on another machine, it asks for a link from that machine. When unsure, the safe answer is no.
 4. Start the game and type `/peon`.
 
-To update, run the installer again: it gets the newest release by itself. To turn the companion app off or on, double-click `start-stop.cmd`, or run `sh start-stop.sh` on Linux. **[The install guide](docs/INSTALL.md)** covers every route, what to do when something goes wrong, and how to remove it.
+Chat tells you when there's a new version. To update, run the installer again: it gets the newest release by itself. To turn the companion app off or on, double-click `start-stop.cmd`, or run `sh start-stop.sh` on Linux. **[The install guide](docs/INSTALL.md)** covers every route, what to do when something goes wrong, and how to remove it.
 
 ## What it is, and what it isn't
 
