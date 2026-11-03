@@ -18,7 +18,8 @@ class Terminal(io.StringIO):
 class AtATerminal(unittest.TestCase):
     def setUp(self):
         self.out = Terminal()
-        for patcher in (mock.patch("sys.stdout", self.out), mock.patch.dict(os.environ, {"COLUMNS": "60"}), mock.patch.object(screen, "_enable_windows_colors")):
+        for patcher in (mock.patch("sys.stdout", self.out), mock.patch.dict(os.environ, {"COLUMNS": "60"}), mock.patch.object(screen, "_enable_windows_colors"),
+                        mock.patch.object(screen, "_windows_colors_on", True)):
             self.addCleanup(patcher.stop)
             patcher.start()
         os.environ.pop("NO_COLOR", None)
@@ -68,6 +69,12 @@ class AtATerminal(unittest.TestCase):
         screen.ok("word " * 30)
         lines = self.plain().splitlines()
         self.assertTrue(lines[1].startswith(screen.INDENT + "     w"), lines[1])
+
+    def test_a_windows_console_that_refuses_colors_stays_plain(self):
+        with mock.patch.object(screen, "_windows_colors_on", False), mock.patch.object(screen.os, "name", "nt"):
+            screen.ok("Connected")
+        self.assertEqual(self.out.getvalue(), self.plain())
+        self.assertIn("[ok] Connected", self.plain())
 
     def test_no_color_is_respected(self):
         with mock.patch.dict(os.environ, {"NO_COLOR": "1"}):
