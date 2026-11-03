@@ -193,6 +193,22 @@ def install_addon(wow_dir: Path, source: Path, hard_links: bool = settings.IS_WI
     return settings.SLOT_COUNT + settings.OUT_COUNT
 
 
+def remove_from_client(wow_dir: Path) -> tuple[int, list[str]]:
+    """Take Prompt Peon and what the game saved for it out of one client, and nobody else's addons.
+    Says how many addons went, and what it couldn't remove."""
+    removed, left = 0, []
+    for path in [*(wow_dir / "Interface/AddOns").glob(f"{settings.ADDON}*"), *(wow_dir / "WTF/Account").glob(f"*/SavedVariables/{settings.ADDON}.lua*")]:
+        is_addon = path.parent.name == "AddOns"
+        if is_addon and path.name not in OUR_ADDONS:
+            continue
+        try:
+            safefiles.remove_path(path)
+            removed += is_addon
+        except OSError:
+            left.append(str(path))
+    return removed, left
+
+
 def place_addon(wow_dir: Path, source: Path) -> int:
     """Put the addon in the game, or say in plain words why it can't go there."""
     try:

@@ -1,4 +1,4 @@
-"""One install works with every WoW client: it goes into all of them, and the app follows the game you open."""
+"""One install works with every WoW client you choose, and the app follows the game you open."""
 import io
 import json
 import os
@@ -46,9 +46,9 @@ class FindsEveryClient(Base):
 
 
 class TheInstallerGoesIntoAllOfThem(Base):
-    def install(self, found):
+    def install(self, found, client=None):
         cfg, state, home = self.dir / "cfg", self.dir / "state2", self.dir / "home2"
-        args = mock.Mock(wow_dir=None, client=None, url=None, link=None, pictures=None, allow_unencrypted=False, full_access=None,
+        args = mock.Mock(wow_dir=None, client=client, url=None, link=None, pictures=None, allow_unencrypted=False, full_access=None,
                          no_update=True, no_start=True, addon_source=str(ROOT / "addon/PromptPeon"))
         for owner, name, value in ((settings, "CONFIG_DIR", cfg), (settings, "STATE_DIR", state), (settings, "HOME_DIR", home),
                                    (wowfolder, "find_wow_dirs", mock.Mock(return_value=found)),
@@ -97,12 +97,78 @@ class TheInstallerGoesIntoAllOfThem(Base):
         trusted = json.loads((self.dir / "cfg/config.json").read_text())["trusted_addons"]
         self.assertEqual(sorted(trusted), ["OnlyInEra", "OnlyInRetail"])
 
-    def test_naming_one_client_later_clears_thread_text_from_the_others(self):
+    def test_choosing_fewer_takes_prompt_peon_out_of_the_rest(self):
         era, retail = self.clients()
         self.install([era, retail])
-        (retail / "Interface/AddOns/PromptPeon/Snapshot.lua").write_text("PromptPeonSnapshot = 'words from a thread'\n")
+        saved = retail / "WTF/Account/ME/SavedVariables"
+        saved.mkdir(parents=True)
+        (saved / f"{settings.ADDON}.lua").write_text("PromptPeonDB = {}\n")
+        (retail / "Interface/AddOns/SomeoneElse").mkdir()
+        with mock.patch.object(prompts, "choose_clients", return_value=[era]):
+            _printed, config = self.install([era, retail])
+        self.assertFalse((retail / "Interface/AddOns/PromptPeon").exists())
+        self.assertFalse((retail / "Interface/AddOns/PromptPeonIn001").exists())
+        self.assertFalse((saved / f"{settings.ADDON}.lua").exists())
+        self.assertTrue((retail / "Interface/AddOns/SomeoneElse").is_dir(), "other addons stay")
+        self.assertTrue((era / "Interface/AddOns/PromptPeon").is_dir())
+        self.assertEqual(config["wow_dirs"], [str(era)])
+
+    def test_naming_a_client_adds_it_to_what_you_have(self):
+        era, retail = self.clients()
         self.install([era])
-        self.assertNotIn("words from a thread", (retail / "Interface/AddOns/PromptPeon/Snapshot.lua").read_text())
+        _printed, config = self.install([retail], client="retail")
+        self.assertEqual(sorted(config["wow_dirs"]), sorted([str(era), str(retail)]))
+        self.assertTrue((era / "Interface/AddOns/PromptPeon").is_dir())
+
+
+class ChoosingClients(Base):
+    def setUp(self):
+        super().setUp()
+        self.era, self.retail, self.forever = [self.dir / "WoW" / name for name in ("_classic_era_", "_retail_", "_forever_")]
+        self.found = [self.era, self.retail, self.forever]
+
+    def choose(self, answers, saved=(), tty=True):
+        with mock.patch.object(sys.stdin, "isatty", lambda: tty), mock.patch("builtins.input", side_effect=list(answers)) as self.asked, \
+                mock.patch("sys.stdout", new_callable=io.StringIO) as self.printed:
+            return prompts.choose_clients(self.found, list(saved))
+
+    def test_one_client_means_no_question(self):
+        self.found = [self.era]
+        self.assertEqual(self.choose([]), [self.era])
+        self.asked.assert_not_called()
+
+    def test_enter_the_first_time_takes_them_all(self):
+        self.assertEqual(self.choose([""]), self.found)
+        self.assertIn("WoW Retail", self.printed.getvalue())
+
+    def test_enter_later_keeps_what_you_have(self):
+        self.assertEqual(self.choose([""], saved=[self.retail]), [self.retail])
+
+    def test_the_list_shows_what_you_have_now(self):
+        self.choose([""], saved=[self.retail])
+        lines = self.printed.getvalue().splitlines()
+        self.assertTrue(any("[x]" in line and "WoW Retail" in line for line in lines), lines)
+        self.assertTrue(any("[ ]" in line and "WoW Classic Era" in line for line in lines), lines)
+
+    def test_you_can_pick_several_however_you_type_them(self):
+        for answer in ("1 3", "1,3", "3, 1", " 1  3 "):
+            self.assertEqual(self.choose([answer]), [self.era, self.forever], answer)
+
+    def test_a_wrong_answer_asks_again(self):
+        self.assertEqual(self.choose(["7", "two", "2"]), [self.retail])
+        self.assertEqual(self.asked.call_count, 3)
+
+    def test_giving_up_changes_nothing(self):
+        self.assertEqual(self.choose(["x", "x", "x"], saved=[self.era]), [self.era])
+
+    def test_a_client_you_have_that_it_cant_find_is_still_listed(self):
+        custom = self.dir / "Elsewhere/_retail_"
+        self.assertEqual(self.choose(["1 2"], saved=[custom]), [custom, self.era], "what you have comes first")
+
+    def test_with_nobody_there_it_keeps_what_you_have_or_takes_them_all(self):
+        self.assertEqual(self.choose([], saved=[self.retail], tty=False), [self.retail])
+        self.assertEqual(self.choose([], tty=False), self.found)
+        self.asked.assert_not_called()
 
 
 class WhichGameIsOpen(Base):
