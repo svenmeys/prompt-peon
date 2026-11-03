@@ -121,7 +121,7 @@ Done. Start the game, or restart it if it is open, and type /peon.
 
 **It worked if** the log opens with your threads on the left.
 
-![The Prompt Peon window open in the game world. Threads are grouped by project on the left, each with a status mark. The open thread fills the right side, with spells and a Send button along the bottom.](images/hero.jpg)
+![The Prompt Peon window. Threads are grouped by project on the left, each with a status mark. The open thread fills the right side, with spells and a Send button along the bottom.](images/hero.jpg)
 
 *The log, shown with demo threads. Yours lists your own.*
 
