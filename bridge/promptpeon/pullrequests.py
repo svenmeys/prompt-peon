@@ -4,7 +4,7 @@ from __future__ import annotations
 import re
 import time
 
-from . import gametext, settings, t3errors, threadstate
+from . import diffs, gametext, settings, t3errors, threadstate
 
 
 def summarize_checks(checks: list[dict]) -> dict:
@@ -194,10 +194,10 @@ def pull_request_rows(thread: dict, known_checks: dict) -> list[dict]:
 
 def load_pull_request(bridge, thread: dict, argument: str) -> str:
     """Only for a pull request this thread really links, so the game can't ask about anything else."""
-    number = int(argument) if argument.strip().isdigit() else None
-    link = next((link for link in thread.get("pullRequests") or [] if link.get("number") == number), None)
+    link = diffs.linked_pull_request(thread, argument)
     if link is None:
         return "failed: that pull request isn't linked to this thread"
+    number = link["number"]
     project = thread.get("projectId")
     problems = []
 

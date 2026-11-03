@@ -243,6 +243,25 @@ class T3Remote:
         self._rpc("orchestration.dispatchCommand", {"type": "thread.model-selection.set", "commandId": str(uuid.uuid4()),
                                                     "threadId": thread_id, "modelSelection": selection})
 
+    def pr_diff(self, project_id: str, link: dict) -> tuple[str, bool]:
+        """One pull request's changes as a unified diff, and whether some got left out. T3 sends big ones in slices."""
+        parts: list[str] = []
+        size, cut, cursor = 0, False, None
+        while True:
+            payload = {"projectId": project_id, "host": link.get("host"), "repository": link.get("repository"), "number": link.get("number")}
+            if cursor:
+                payload["cursor"] = cursor
+            answer = self._request("/api/pull-requests/diff", method="POST", body=json.dumps(payload).encode())
+            patch = answer.get("patch") or ""
+            parts.append(patch)
+            size += len(patch)
+            cut = cut or bool(answer.get("truncated"))
+            cursor = answer.get("nextCursor")
+            if not cursor:
+                return "".join(parts), cut
+            if size >= settings.T3_DIFF_LIMIT:
+                return "".join(parts), True
+
     def pr_checks(self, project_id: str, link: dict) -> dict | None:
         return self._rpc("pullRequests.checks", {"projectId": project_id, "host": link.get("host"),
                                                  "repository": link.get("repository"), "number": link.get("number")})

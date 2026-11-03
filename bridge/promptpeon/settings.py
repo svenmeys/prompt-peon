@@ -54,7 +54,7 @@ MAX_DIFF_LINE = 1200  # Characters. Minified files have lines nobody can read in
 LOADED_SECONDS = 60
 T3_DIFF_LIMIT = 10_000_000  # T3 cuts a diff off at this size.
 MAX_AGENTS = 30
-LOADED_FIELDS = ("df", "dn", "fp", "ax", "ob", "om", "oc", "vm", "pd")  # Rows that only stay for a minute.
+LOADED_FIELDS = ("df", "dn", "dp", "fp", "ax", "ob", "om", "oc", "vm", "pd")  # Rows that only stay for a minute.
 # What a thread keeps while its words stay out of the game: enough for the list, tracker and party.
 WITHHELD_KEEPS = ("id", "p", "t", "s", "u", "pk", "zu", "mo", "pv", "mi", "ef", "rm", "a", "as", "nb", "cu", "tn")
 HELPER_CHECK_SECONDS = 30  # Walking every helper isn't free, so not on every refresh.

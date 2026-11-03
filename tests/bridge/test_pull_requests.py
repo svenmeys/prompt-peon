@@ -8,6 +8,138 @@ from bridge_helpers import Base, CommandRemote, FakeRemote, THREAD, command, thr
 from promptpeon import bridgestate, delivery, publishing, pullrequests, refreshing, settings, snapshots, t3errors
 
 
+PATCH_A = "diff --git a/src/a.py b/src/a.py\n--- a/src/a.py\n+++ b/src/a.py\n@@ -1 +1 @@\n-old\n+new\n"
+PATCH_B = "diff --git a/src/b.py b/src/b.py\n--- a/src/b.py\n+++ b/src/b.py\n@@ -1 +1,2 @@\n one\n+two\n"
+
+
+class OnePullRequestsChanges(Base):
+    """Going into a pull request shows that pull request's files, not everything the thread ever changed."""
+
+    LINK = {"host": "github.com", "repository": "me/repo", "number": 7, "snapshot": {"state": "open", "title": "Fix"}}
+
+    def make(self, patch=PATCH_A, cut=False):
+        remote = CommandRemote(shell={"threads": [thread(projectId="p1", pullRequests=[self.LINK])], "projects": [{"id": "p1", "title": "Shop"}]})
+        remote.pr_diff = mock.Mock(return_value=(patch, cut))
+        remote.thread_diff = mock.Mock(return_value=PATCH_B)
+        bridge = self.bridge(remote)
+        refreshing.refresh(bridge)
+        return bridge, remote
+
+    def loaded(self, bridge):
+        publishing.publish(bridge)
+        return bridge.snapshot["threads"][0]
+
+    def test_it_sends_only_that_pull_requests_files(self):
+        bridge, remote = self.make()
+        delivery.deliver(bridge, [command(1, THREAD, "prdiff\n7")])
+        self.assertEqual(bridge.state["results"]["1"], "sent")
+        remote.pr_diff.assert_called_once_with("p1", self.LINK)
+        remote.thread_diff.assert_not_called()
+        row = self.loaded(bridge)
+        self.assertEqual([file[0] for file in row["df"]], ["src/a.py"])
+        self.assertEqual(row["dp"], 7, "so the game knows whose files these are")
+
+    def test_a_pull_request_this_thread_doesnt_link_is_refused(self):
+        bridge, remote = self.make()
+        delivery.deliver(bridge, [command(1, THREAD, "prdiff\n8")])
+        self.assertIn("isn't linked", bridge.state["results"]["1"])
+        remote.pr_diff.assert_not_called()
+
+    def test_nonsense_is_refused(self):
+        bridge, remote = self.make()
+        delivery.deliver(bridge, [command(1, THREAD, "prdiff\nmain; rm -rf /")])
+        self.assertIn("isn't linked", bridge.state["results"]["1"])
+        remote.pr_diff.assert_not_called()
+
+    def test_a_hidden_thread_stays_hidden(self):
+        bridge, remote = self.make()
+        bridge.state["hidden"] = {"projects": ["Shop"], "threads": []}
+        delivery.deliver(bridge, [command(1, THREAD, "prdiff\n7")])
+        self.assertIn("hidden", bridge.state["results"]["1"])
+        remote.pr_diff.assert_not_called()
+
+    def test_it_counts_as_a_read_toward_the_limit(self):
+        bridge, remote = self.make()
+        delivery.deliver(bridge, [command(seq, THREAD, "prdiff\n7") for seq in range(1, settings.MAX_READS_PER_MINUTE + 3)])
+        self.assertEqual(remote.pr_diff.call_count, settings.MAX_READS_PER_MINUTE)
+
+    def test_an_empty_or_cut_diff_says_so(self):
+        bridge, _remote = self.make(patch="")
+        delivery.deliver(bridge, [command(1, THREAD, "prdiff\n7")])
+        self.assertIn("no changes", self.loaded(bridge)["dn"])
+        bridge, _remote = self.make(cut=True)
+        delivery.deliver(bridge, [command(2, THREAD, "prdiff\n7")])
+        self.assertIn("some files may be missing", self.loaded(bridge)["dn"])
+
+    def test_t3_saying_no_reaches_the_player_as_a_failure(self):
+        bridge, remote = self.make()
+        remote.pr_diff.side_effect = OSError("no route")
+        delivery.deliver(bridge, [command(1, THREAD, "prdiff\n7")])
+        self.assertTrue(bridge.state["results"]["1"].startswith("failed"), bridge.state["results"]["1"])
+
+    def test_the_threads_own_changes_arent_marked_as_a_pull_request(self):
+        bridge, _remote = self.make()
+        delivery.deliver(bridge, [command(1, THREAD, "diff\n")])
+        self.assertEqual(self.loaded(bridge)["dp"], 0)
+
+    def test_big_files_page_from_the_same_pull_request(self):
+        big = "diff --git a/big.py b/big.py\n--- a/big.py\n+++ b/big.py\n@@ -1,1 +1,4000 @@\n" + "".join(f"+line {n} {'x' * 60}\n" for n in range(4000))
+        bridge, remote = self.make(patch=big)
+        delivery.deliver(bridge, [command(1, THREAD, "prdiff\n7")])
+        delivery.deliver(bridge, [command(2, THREAD, "file\nbig.py\n2\n7")])
+        self.assertEqual(bridge.state["results"]["2"], "sent")
+        self.assertEqual(self.loaded(bridge)["fp"][:2], ["big.py", 2])
+        remote.pr_diff.assert_called_once()
+        remote.thread_diff.assert_not_called()
+
+    def test_a_page_after_another_diff_was_opened_asks_for_the_right_one_again(self):
+        big = "diff --git a/big.py b/big.py\n--- a/big.py\n+++ b/big.py\n@@ -1,1 +1,4000 @@\n" + "".join(f"+line {n} {'x' * 60}\n" for n in range(4000))
+        bridge, remote = self.make(patch=big)
+        delivery.deliver(bridge, [command(1, THREAD, "diff\n")])
+        delivery.deliver(bridge, [command(2, THREAD, "file\nbig.py\n2\n7")])
+        self.assertEqual(bridge.state["results"]["2"], "sent")
+        remote.pr_diff.assert_called_once()
+
+    def test_the_old_two_part_file_request_still_means_the_thread(self):
+        bridge, remote = self.make()
+        delivery.deliver(bridge, [command(1, THREAD, "file\nsrc/b.py\n1")])
+        self.assertEqual(bridge.state["results"]["1"], "sent")
+        remote.thread_diff.assert_called_once()
+        remote.pr_diff.assert_not_called()
+
+
+class AskingT3ForAPullRequestsDiff(unittest.TestCase):
+    def remote(self, *answers):
+        from promptpeon import t3remote
+        remote = t3remote.T3Remote("http://t3", "token")
+        remote._request = mock.Mock(side_effect=list(answers))
+        return remote
+
+    LINK = {"host": "github.com", "repository": "me/repo", "number": 7}
+
+    def test_it_posts_what_t3_asks_for(self):
+        remote = self.remote({"patch": PATCH_A, "truncated": False, "nextCursor": None})
+        self.assertEqual(remote.pr_diff("p1", self.LINK), (PATCH_A, False))
+        path = remote._request.call_args.args[0]
+        self.assertEqual(path, "/api/pull-requests/diff")
+        self.assertEqual(remote._request.call_args.kwargs["method"], "POST")
+        self.assertEqual(json.loads(remote._request.call_args.kwargs["body"]), {"projectId": "p1", "host": "github.com", "repository": "me/repo", "number": 7})
+
+    def test_it_follows_pages(self):
+        remote = self.remote({"patch": PATCH_A, "truncated": False, "nextCursor": "more"}, {"patch": PATCH_B, "truncated": False, "nextCursor": None})
+        self.assertEqual(remote.pr_diff("p1", self.LINK), (PATCH_A + PATCH_B, False))
+        self.assertEqual(json.loads(remote._request.call_args.kwargs["body"])["cursor"], "more")
+
+    def test_it_stops_at_a_size_and_says_it_was_cut(self):
+        huge = "x" * settings.T3_DIFF_LIMIT
+        remote = self.remote({"patch": huge, "truncated": False, "nextCursor": "more"})
+        self.assertEqual(remote.pr_diff("p1", self.LINK), (huge, True))
+
+    def test_t3_saying_it_left_things_out_counts(self):
+        remote = self.remote({"patch": PATCH_A, "truncated": True, "nextCursor": None})
+        self.assertTrue(remote.pr_diff("p1", self.LINK)[1])
+
+
 class LinkedPullRequests(Base):
     LINK = {"host": "github.com", "repository": "me/repo", "number": 7, "url": "https://github.com/me/repo/pull/7", "source": "agent",
             "snapshot": {"title": "Fix the login", "state": "open", "checksState": "passing", "reviewDecision": "review-required", "mergeability": "conflicting",

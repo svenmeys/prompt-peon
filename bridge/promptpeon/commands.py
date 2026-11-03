@@ -46,7 +46,7 @@ def command_result(bridge, verb: str, thread_id: str, argument: str) -> str:
         if verb == "unsettle":
             return "failed: T3 no longer lists this thread. Reopen it in T3, then try again."
         return "failed: that thread is not on this T3 server"
-    if verb in ("diff", "agents", "file", "older", "view", "pr") and bridge.hides(known[thread_id]):
+    if verb in ("diff", "agents", "file", "older", "view", "pr", "prdiff") and bridge.hides(known[thread_id]):
         return "failed: this thread is hidden. Show it first."
     if verb == "stop":
         bridge.remote.stop_thread(thread_id)
@@ -98,8 +98,10 @@ def command_result(bridge, verb: str, thread_id: str, argument: str) -> str:
         return "sent"
     elif verb == "pr":
         return pullrequests.load_pull_request(bridge, known[thread_id], argument)
+    elif verb == "prdiff":
+        return diffs.load_pull_request_diff(bridge, known[thread_id], argument)
     elif verb == "file":
-        return diffs.load_file_page(bridge, thread_id, argument)
+        return diffs.load_file_page(bridge, known[thread_id], argument)
     elif verb == "older":
         before = int(argument)
         rows, more = bridge.remote.older_rows(thread_id, before)

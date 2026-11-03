@@ -126,6 +126,13 @@ function UI:DrawChanges(canvas, thread)
     foldingHead(thread.id .. ":summary", "|cffc8c5b8" .. plural(#kept.df, "file") .. " changed|r", diffCounts(allAdded, allRemoved), true)
     canvas.y = canvas.y + 3
   end
+  self:DrawDiffFiles(canvas, thread)
+end
+
+--- The files of the diff we have, a thread's or one pull request's, each one opening to its changes.
+function UI:DrawDiffFiles(canvas, thread)
+  local add, bar, foldingHead, width = canvas.add, canvas.bar, canvas.foldingHead, canvas.width
+  local kept = ns.loaded[thread.id] or {}
   local function drawPatch(patch, firstOld, firstNew)
     local charWidth = self:CodeCharWidth()
     local gutter = math.ceil(charWidth * 5) + 8

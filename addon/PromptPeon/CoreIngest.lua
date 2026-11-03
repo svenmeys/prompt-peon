@@ -107,7 +107,7 @@ function ns:Ingest()
         for _, row in ipairs(kept.older or {}) do merged[#merged + 1] = row end
         kept.older, kept.olderMore, kept.olderBefore = merged, thread.om, thread.oc
       end
-      if thread.df then kept.df, kept.dn = thread.df, thread.dn end
+      if thread.df then kept.df, kept.dn, kept.dp = thread.df, thread.dn, thread.dp end
       if thread.ax then kept.ax = thread.ax end
       if thread.fp then
         kept.pages = kept.pages or {}
