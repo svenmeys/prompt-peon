@@ -34,7 +34,7 @@ INSTALL_PYTHON = (3, 14)  # The newest one winget has, with no known CVEs. A tes
 UPDATE_SECONDS = 60
 UPDATE_CHECK_SECONDS = 30 * 60  # How often the app asks whether a newer release exists, while the game is open.
 MAX_UPDATE_BYTES = 30 * 1024 * 1024  # Unpacked. The real thing is under 1 MB.
-UPDATE_PARTS = {"addon", "bridge", "install.cmd", "uninstall.cmd", "start-stop.cmd", "install.sh", "uninstall.sh", "start-stop.sh"}  # What the installer uses.
+UPDATE_PARTS = {"addon", "bridge", "install.cmd", "uninstall.cmd", "start-stop.cmd", "install.sh", "uninstall.sh", "start-stop.sh"}  # What the installer uses. An older installer only unpacks what its own list names, so a new file here reaches an install one update later.
 MAX_THREADS = 30
 THREADS_WITH_MESSAGES = 30
 # Keep messages whole. Measured on real threads: the last 30 messages of every open thread
