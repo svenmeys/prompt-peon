@@ -12,7 +12,7 @@ For Classic Era, retail and WoW Forever. Free and open source.
 
 **A quest log.** `/peon` opens every thread under its project, with the whole conversation: messages, tool steps, todo lists, questions and pictures.
 
-![The Prompt Peon window open in the game world. Threads are grouped by project on the left, each with a status mark. The open thread fills the right side, with spells and a Send button along the bottom. Party frames sit top left and the tracker top right.](docs/images/hero.jpg)
+![The Prompt Peon window. Threads are grouped by project on the left, each with a status mark. The open thread fills the right side, with spells and a Send button along the bottom.](docs/images/hero.jpg)
 
 **Real controls.** Reply, steer, start, stop, snooze and turn in. See what a thread changed in a colored diff, the subagents it sent out, and its pull requests with their CI. Approvals stay in T3.
 
