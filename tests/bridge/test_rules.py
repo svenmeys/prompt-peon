@@ -2,10 +2,13 @@
 import http.server
 import os
 import re
+import shutil
 import subprocess
 import sys
+import tempfile
 import threading
 import unittest
+from pathlib import Path
 from unittest import mock
 
 from bridge_helpers import Base, CommandRemote, ROOT, THREAD, thread
@@ -146,6 +149,37 @@ class CiStaysLockedDown(unittest.TestCase):
         self.assertEqual(sorted(path.name for path in (ROOT / ".github/workflows").iterdir()), ["release.yml", "test.yml"])
 
 
+@unittest.skipUnless(os.name == "nt", "Only Windows has cmd.exe")
+class TheWindowsLaunchersFindPython(unittest.TestCase):
+    """Runs each launcher's real lines in the real cmd.exe. A wrong choice here stops an install before Python starts."""
+
+    def choice(self, name, path):
+        lines = (ROOT / name).read_text().splitlines()
+        first = next(index for index, line in enumerate(lines) if line.startswith('set "PYTHON="'))
+        last = next(index for index, line in enumerate(lines) if line.startswith("if not defined PYTHON ("))
+        check = [line for line in lines if line.startswith('set "CHECK=')]
+        with tempfile.TemporaryDirectory() as folder:
+            script = Path(folder) / "probe.cmd"
+            script.write_text("\r\n".join(["@echo off", "setlocal", *check, *lines[first:last], "echo [%PYTHON%][%PYFLAG%]", ""]))
+            done = subprocess.run([os.environ["COMSPEC"], "/c", str(script)], env={**os.environ, "PATH": path},
+                                  capture_output=True, text=True, timeout=60)
+        return done.stdout.strip()
+
+    def test_a_working_py_launcher_keeps_its_flag(self):
+        launcher = shutil.which("py")
+        self.assertTrue(launcher, "GitHub's Windows machines have py, and this test needs it")
+        # Uninstall takes any Python 3. Install needs a new enough one, so ask py what it would pick.
+        new_enough = subprocess.run([launcher, "-3", "-I", "-c", "import sys; sys.exit(sys.version_info < (3, 14))"]).returncode == 0
+        self.assertEqual(self.choice("uninstall.cmd", os.environ["PATH"]), "[py][-3]")
+        if new_enough:
+            self.assertEqual(self.choice("install.cmd", os.environ["PATH"]), "[py][-3]")
+            self.assertEqual(self.choice("start-stop.cmd", os.environ["PATH"]), "[py][-3]")
+
+    def test_without_py_it_uses_python_and_no_flag(self):
+        for name in ("install.cmd", "uninstall.cmd", "start-stop.cmd"):
+            self.assertEqual(self.choice(name, str(Path(sys.executable).parent)), "[python][]")
+
+
 class ReleasesStayLockedDown(unittest.TestCase):
     """The one workflow that can write. It starts only from a tag and runs none of the project's code."""
 
@@ -184,7 +218,7 @@ class ReleasesStayLockedDown(unittest.TestCase):
 class Wrappers(unittest.TestCase):
     def test_every_python_the_wrappers_try_runs_isolated(self):
         # A check that loads PYTHONPATH or sitecustomize has already run someone's code, whatever comes after it.
-        for name in ("install.cmd", "uninstall.cmd"):
+        for name in ("install.cmd", "uninstall.cmd", "start-stop.cmd"):
             lines = [line for line in (ROOT / name).read_text().splitlines() if " -c " in line]
             self.assertTrue(lines, name)
             for line in lines:

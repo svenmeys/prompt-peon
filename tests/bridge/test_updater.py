@@ -136,7 +136,7 @@ sys.exit(7)
         with zipfile.ZipFile(out, "w") as archive:
             for path in sorted(ROOT.rglob("*")):
                 relative = path.relative_to(ROOT)
-                if path.is_file() and relative.parts[0] in ("addon", "bridge", "docs", "install.cmd", "install.sh", "uninstall.cmd", "uninstall.sh") \
+                if path.is_file() and relative.parts[0] in ("addon", "bridge", "docs", "install.cmd", "install.sh", "uninstall.cmd", "uninstall.sh", "start-stop.cmd", "start-stop.sh") \
                         and "__pycache__" not in relative.parts and "images" not in relative.parts:
                     archive.write(path, f"prompt-peon-{settings.VERSION}/{relative.as_posix()}")
         return out.getvalue()

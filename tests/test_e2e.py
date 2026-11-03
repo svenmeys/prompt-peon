@@ -167,6 +167,49 @@ class EndToEnd(unittest.TestCase):
         self.assertFalse(home.exists(), gone.stdout + gone.stderr)
         self.assertFalse((self.wow / "Interface/AddOns/PromptPeon").exists(), gone.stdout + gone.stderr)
 
+    @unittest.skipUnless(os.name == "nt", "On Linux the switch would touch this machine's real service")
+    def test_the_switch_turns_the_real_app_off_and_on(self):
+        import msvcrt
+        import winreg
+
+        home = self.dir / "state/prompt-peon"
+        switch = ["cmd", "/c", str(home / "start-stop.cmd")]
+
+        def flip():
+            return subprocess.run(switch, env=self.env, input="", capture_output=True, text=True, timeout=120)
+
+        def starts_at_login():
+            try:
+                with winreg.OpenKey(winreg.HKEY_CURRENT_USER, settings.RUN_KEY) as handle:
+                    return bool(winreg.QueryValueEx(handle, settings.RUN_VALUE)[0])
+            except OSError:
+                return False
+
+        def running():
+            handle = (home / "bridge.lock").open("a+")
+            try:
+                msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+                return False
+            except OSError:
+                return True
+            finally:
+                handle.close()
+
+        done = subprocess.run(["cmd", "/c", str(ROOT / "install.cmd"), "--wow-dir", str(self.wow), "--url", self.url], env=self.env,
+                              input=TOKEN + "\n\n", capture_output=True, text=True, timeout=120)
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        self.wait_for(running)
+        self.assertTrue(starts_at_login())
+        off = flip()
+        self.assertIn("is off", off.stdout, off.stdout + off.stderr)
+        self.assertFalse(running())
+        self.assertFalse(starts_at_login())
+        on = flip()
+        self.assertIn("is on", on.stdout, on.stdout + on.stderr)
+        self.wait_for(running)
+        self.assertTrue(starts_at_login())
+        self.assertIn("is off", flip().stdout, "and off again, so nothing keeps running after this test")
+
     def test_install_refresh_and_reply(self):
         # Install, asking for the token on stdin as a first-time user would be asked.
         start = [] if os.name == "nt" else ["--no-start"]  # Never touch this machine's real services.

@@ -86,11 +86,18 @@ The installer copies the app to the program folder above. From there:
     python3 promptpeon_bridge.py status      # check the connection to T3
     python3 promptpeon_bridge.py once        # refresh once and print what happened
     python3 promptpeon_bridge.py run         # run in the foreground
+    python3 promptpeon_bridge.py start-stop  # turn it off if it's running, and on if it isn't
     python3 promptpeon_bridge.py uninstall   # remove everything
 
 The installer takes `--client era|retail|forever`, `--wow-dir`, `--link`, `--url`, `--pictures`, `--no-pictures`, `--full-access`, `--no-full-access`, `--no-start`, `--allow-unencrypted` and `--no-update`.
 
 Logs: `journalctl --user -u prompt-peon` on Linux, and `bridge.log` in the state folder on Windows. They hold errors and results, and can name a file or thread id. Thread text stays out.
+
+## Turning it off
+
+Double-click `start-stop.cmd` on Windows, or run `sh start-stop.sh` on Linux. It's next to the installer in the folder you downloaded, and in the program folder too. It turns the companion app off if it's running and on if it isn't, and says which. Off stays off after a reboot until you run it again.
+
+With it off, the game says the companion app has gone quiet, and replies wait until it's back.
 
 ## Removing it
 

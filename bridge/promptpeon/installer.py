@@ -20,7 +20,7 @@ def settle_in(script: Path, addon_source: Path) -> tuple[Path, Path]:
                if path.is_file() and not path.is_symlink()}
     program[Path(script.name)] = script.read_bytes()  # Written last, so what starts it is never newer than what it starts.
     # Setup and removal come along too. They aren't there on an install copied over SSH.
-    wrappers = {name: (script.parent.parent / name).read_bytes() for name in (("install.cmd", "uninstall.cmd") if settings.IS_WINDOWS else ("install.sh", "uninstall.sh"))
+    wrappers = {name: (script.parent.parent / name).read_bytes() for name in (("install.cmd", "uninstall.cmd", "start-stop.cmd") if settings.IS_WINDOWS else ("install.sh", "uninstall.sh", "start-stop.sh"))
                 if (script.parent.parent / name).is_file()}
     files = {path.relative_to(addon_source): path.read_bytes() for path in addon_source.rglob("*")
              if path.is_file() and not path.is_symlink()}

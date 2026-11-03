@@ -8,7 +8,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-VERSION = "0.32.0"
+VERSION = "0.32.1"
 ENTRY_POINT = "promptpeon_bridge.py"  # Installers, autostart, the service and stopping a running copy all know it by this name.
 PACKAGE = "promptpeon"  # This folder, which sits next to the entry point.
 PROGRAM_DIR = Path(__file__).resolve().parent.parent  # Where the entry point is: bridge/ in a download or an install.
@@ -33,7 +33,7 @@ UPDATE_ZIP = f"https://codeload.github.com/{UPDATE_REPO}/zip/refs/tags/v{{versio
 INSTALL_PYTHON = (3, 14)  # The newest one winget has, with no known CVEs. A test keeps install.cmd and CI equal to this.
 UPDATE_SECONDS = 60
 MAX_UPDATE_BYTES = 30 * 1024 * 1024  # Unpacked. The real thing is under 1 MB.
-UPDATE_PARTS = {"addon", "bridge", "install.cmd", "uninstall.cmd", "install.sh", "uninstall.sh"}  # What the installer uses.
+UPDATE_PARTS = {"addon", "bridge", "install.cmd", "uninstall.cmd", "start-stop.cmd", "install.sh", "uninstall.sh", "start-stop.sh"}  # What the installer uses.
 MAX_THREADS = 30
 THREADS_WITH_MESSAGES = 30
 # Keep messages whole. Measured on real threads: the last 30 messages of every open thread

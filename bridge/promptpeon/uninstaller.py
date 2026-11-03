@@ -7,7 +7,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from . import addonfiles, processes, safefiles, settings, userconfig
+from . import addonfiles, autostart, processes, safefiles, settings, userconfig
 
 
 def game_folders_with_us(wow_dir: Path | None) -> list[Path]:
@@ -27,16 +27,8 @@ def uninstall(wow_dir: Path | None) -> None:
     # Every client it went into. On Windows each one is its own program.
     if any(processes.game_running(folder) for folder in folders or ([wow_dir] if wow_dir else [])):
         sys.exit("Close WoW first. It saves its data again when it closes, and that would bring it back.")
-    if settings.IS_WINDOWS:
-        import winreg
-
-        try:
-            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, settings.RUN_KEY, 0, winreg.KEY_SET_VALUE) as handle:
-                winreg.DeleteValue(handle, settings.RUN_VALUE)
-        except OSError:
-            pass
-    elif shutil.which("systemctl"):
-        subprocess.run(["systemctl", "--user", "disable", "--now", settings.SERVICE], capture_output=True, timeout=30)
+    autostart.stop_autostart()
+    if not settings.IS_WINDOWS and shutil.which("systemctl"):
         (Path.home() / f".config/systemd/user/{settings.SERVICE}.service").unlink(missing_ok=True)
         subprocess.run(["systemctl", "--user", "daemon-reload"], capture_output=True, timeout=30)
     # It could have been started by hand. Left running, it would put everything back.

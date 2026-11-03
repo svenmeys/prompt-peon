@@ -2,7 +2,7 @@
 ## Title: Prompt Peon
 ## Notes: Your T3 Code agents inside WoW, as a quest log and a party. Needs the companion app running on this machine.
 ## Author: Sven Meys
-## Version: 0.32.0
+## Version: 0.32.1
 ## SavedVariables: PromptPeonDB, PromptPeonOutbox
 ## IconTexture: Interface\QuestFrame\UI-QuestLog-BookIcon
 ## Category: Prompt Peon

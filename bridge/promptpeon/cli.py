@@ -1,4 +1,4 @@
-"""The command line: install, uninstall, run, once, status and link."""
+"""The command line: install, uninstall, start-stop, run, once, status and link."""
 from __future__ import annotations
 
 import argparse
@@ -8,7 +8,7 @@ import urllib.error
 from pathlib import Path
 
 from . import (
-    bridgestate, delivery, installer, loop, pairing, processes, prompts, refreshing, settings, t3remote, threadstate,
+    autostart, bridgestate, delivery, installer, loop, pairing, processes, prompts, refreshing, settings, t3remote, threadstate,
     uninstaller, userconfig,
 )
 
@@ -38,6 +38,7 @@ def main() -> None:
     remove = sub.add_parser("uninstall", help="remove the addon, the companion app, your token and all saved data")
     remove.add_argument("--yes", action="store_true", help="don't ask first")
     install.add_argument("--addon-source", default=str(settings.PROGRAM_DIR.parent / "addon" / settings.ADDON))
+    sub.add_parser("start-stop", help="turn the companion app off if it's running, and on if it isn't")
     run_parser = sub.add_parser("run", help="run the companion app")
     run_parser.add_argument("--always", action="store_true", help="dial T3 even when the game is closed")
     once = sub.add_parser("once", help="refresh once, deliver any outbox, print what happened")
@@ -50,6 +51,9 @@ def main() -> None:
         sys.exit(pairing.make_link())
     if args.command == "install":
         installer.install(args)
+        return
+    if args.command == "start-stop":
+        print(autostart.start_stop())
         return
 
     if args.command == "uninstall":
