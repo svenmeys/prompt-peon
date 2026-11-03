@@ -91,11 +91,11 @@ When it asks, paste your link, or press Enter if your threads are on this machin
 
 **If Windows warns about a downloaded file,** press **More info**, then **Run anyway**.
 
-The installer shows only the questions that apply to you, in this order. If you're not sure, the safe answer is no.
+If you have more than one WoW client, you choose which ones get Prompt Peon, and the companion app follows whichever game you open. The installer shows only the questions that apply to you, in this order. If you're not sure, the safe answer is no.
 
 | It asks | What it decides | If you say no |
 | --- | --- | --- |
-| `Type its number:` | Which WoW client Prompt Peon goes in, when you have more than one | It stops and asks you to choose with `--client era`, `--client retail` or `--client forever` |
+| `Type the numbers you want` | Which WoW clients get Prompt Peon, when you have more than one. Press Enter to keep the ticked ones | It's only a choice of clients. Any you untick have Prompt Peon removed |
 | `Turn pictures on?` | Whether screenshots from threads show in the game. The companion app can then fetch any picture on the T3 machine that it's asked for, not only ones in your projects | Everything else still works |
 | `Press Enter to use this machine, or paste the link:` | Which T3 to use, when it finds one on this machine | Pressing Enter uses this machine's T3 and only its threads |
 | `Press Enter to keep it, or paste a link to connect to another machine:` | Whether to stay connected, when you run it again | Pressing Enter keeps the connection you have |
@@ -139,7 +139,7 @@ Done. Start the game, or restart it if it is open, and type /peon.
 | --- | --- |
 | `--pictures` or `--no-pictures` | Turn pictures on or off. Turning them on may ask for a new link |
 | `--full-access` or `--no-full-access` | Allow or stop sending to and starting agents with full access |
-| `--client era`, `--client retail` or `--client forever` | Move to another WoW client. It also clears your thread text from the old one |
+| `--client era`, `--client retail` or `--client forever` | Add that client without being asked. To remove one, run the installer and untick it |
 | `--no-update` | Use the copy you ran, without asking GitHub for a newer one |
 | `--wow-dir "path"` | Use a WoW folder it can't find. The path ends in `_classic_era_`, `_retail_` or `_forever_` |
 

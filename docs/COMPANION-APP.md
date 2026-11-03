@@ -5,7 +5,7 @@ The small program that runs next to WoW and talks to T3 for the addon. This page
 ## In short
 
 - It's Python 3.14 or newer, standard library only, with nothing else to install.
-- It talks to the one T3 address you gave it, and to GitHub for one thing: while the game is open, it asks every 30 minutes whether a newer release exists, so the game can tell you. Nothing of yours goes with that, and it never downloads anything. Updating is still you running the installer. There's no telemetry and no other server. It ignores proxy settings and refuses redirects, so your token can't be sent somewhere else.
+- It talks to the one T3 address you gave it, and to GitHub for one thing: while the game is open, it asks every 30 minutes whether a newer release exists, so the game can tell you. Nothing of yours goes with that, and it never downloads anything. Updating is still you running the installer. To stop that question, add `"update_check": false` to `config.json`. There's no telemetry and no other server. It ignores proxy settings and refuses redirects, so your token can't be sent somewhere else.
 - It only talks to T3 and GitHub while WoW is running.
 - When the game closes, it clears your thread text, drafts and unsent messages from the game folder. If T3 can't be reached, an unsent message gets two minutes to go first, and the next session tells you if it was lost.
 - While an addon you haven't trusted is installed, no thread text goes in the game folder at all.
@@ -20,7 +20,7 @@ The small program that runs next to WoW and talks to T3 for the addon. This page
 | Runs as | `pythonw`, so no window | `python3`, restarted if it stops |
 | Needs admin | No | No |
 
-It's always running but idle until it sees the game. It looks every 5 seconds. While the game runs, it asks T3 for changes every 5 seconds, or every 15 over T3 Connect, and checks for replies every second. Only one copy can run at a time.
+It's always running but idle until it sees the game, in any client it was installed into. It serves one game at a time, so if two are open, the second waits until the first closes. It looks every 5 seconds. While the game runs, it asks T3 for changes every 5 seconds, or every 15 over T3 Connect, and checks for replies every second. Only one copy can run at a time.
 
 macOS isn't supported.
 

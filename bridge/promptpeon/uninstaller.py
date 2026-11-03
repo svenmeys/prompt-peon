@@ -44,14 +44,9 @@ def uninstall(wow_dir: Path | None) -> None:
             left.append(str(path))
 
     for folder in folders:
-        addons = folder / "Interface/AddOns"
-        for path in list(addons.glob(f"{settings.ADDON}*")):
-            if path.name in addonfiles.OUR_ADDONS:
-                take_out(path)
-                removed += 1
-        # What the game saved for us: drafts and unsent messages, including its backups.
-        for saved in (folder / "WTF/Account").glob(f"*/SavedVariables/{settings.ADDON}.lua*"):
-            take_out(saved)
+        taken, stuck = addonfiles.remove_from_client(folder)
+        removed += taken
+        left += stuck
     token = settings.CONFIG_DIR / "token"
     if token.exists() or token.is_symlink():
         take_out(token)  # This goes whatever else happens.

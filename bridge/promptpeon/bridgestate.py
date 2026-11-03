@@ -110,6 +110,23 @@ class Bridge:
         self.save_state()
         console.log(f"seq {seq}: {result}")
 
+    def clients(self) -> list[Path]:
+        """Every client Prompt Peon went into, with the one it serves now first, so it stays while that game is open."""
+        known = [Path(folder) for folder in self.config().get("wow_dirs") or []]
+        others = [folder for folder in known if folder != self.wow_dir and (folder / "Interface/AddOns" / settings.ADDON).is_dir()]
+        return [self.wow_dir, *dict.fromkeys(others)]
+
+    def use_client(self, wow_dir: Path) -> None:
+        """The game opened in another client, so that one gets the data from now on."""
+        addon = wow_dir / "Interface/AddOns" / settings.ADDON
+        self.wow_dir = wow_dir
+        self.snapshot_path = addon / "Snapshot.lua"
+        self.previews.use_folder(addon / "previews")
+        self.last_written, self.last_write_at = "", 0.0
+        self.helpers_checked_at, self.helpers_changed = None, []
+        self.was_withheld = False
+        self.outbox_path_now = None
+
     def config(self) -> dict:
         try:
             return json.loads(self.config_path.read_text())

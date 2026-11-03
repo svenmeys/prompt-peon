@@ -4,13 +4,26 @@ from __future__ import annotations
 import os
 import signal
 import subprocess
+import sys
 import time
 from pathlib import Path
 
 from . import settings
 
 
+def running_from(program: Path) -> bool:
+    """Retail and Forever are both Wow.exe, so the name can't tell them apart. Windows won't let a running
+    program's file be opened for writing, so this can. Opening it changes nothing.
+    pa-lean: with no write access to the game folder it can't tell, so it counts as running."""
+    try:
+        with program.open("r+b"):
+            return False
+    except OSError:
+        return True
+
+
 def game_running(wow_dir: Path | None = None) -> bool:
+    """Whether the game is open, in this client if you name one. If it can't tell which, it counts."""
     try:
         if settings.IS_WINDOWS:
             names = [settings.CLIENTS[wow_dir.name][1]] if wow_dir and wow_dir.name in settings.CLIENTS else [c[1] for c in settings.CLIENTS.values()]
@@ -20,12 +33,22 @@ def game_running(wow_dir: Path | None = None) -> bool:
                     timeout=10, creationflags=subprocess.CREATE_NO_WINDOW,
                 ).stdout
                 if name.lower() in listed.lower():
-                    return True
+                    return wow_dir is None or wow_dir.name not in settings.CLIENTS or running_from(wow_dir / name)
             return False
-        return subprocess.run(["pgrep", "-if", r"wow(classic)?\.exe|world of warcraft( classic)?\.app"],
-                              capture_output=True, timeout=5).returncode == 0
+        # Full commands, because Proton shows the game's path and that says which client it is.
+        listed = subprocess.run(["pgrep", "-ifl" if sys.platform == "darwin" else "-ifa", r"wow(classic)?\.exe|world of warcraft( classic)?\.app"],
+                                capture_output=True, text=True, timeout=5)
+        if listed.returncode != 0:
+            return False
+        named = [line for line in listed.stdout.splitlines() if any(client in line for client in settings.CLIENTS)]
+        return not wow_dir or not named or any(wow_dir.name in line for line in named)
     except (OSError, subprocess.SubprocessError):
         return True  # Rather dial T3 for nothing than miss the game.
+
+
+def running_client(wow_dirs: list[Path]) -> Path | None:
+    """The first of these with its game open."""
+    return next((wow_dir for wow_dir in wow_dirs if game_running(wow_dir)), None)
 
 
 def acquire_lock(path: Path):

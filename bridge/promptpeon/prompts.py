@@ -8,11 +8,11 @@ from pathlib import Path
 from . import addonfiles, processes, safefiles, settings, userconfig
 
 
-def ask_about_other_addons(wow_dir: Path) -> None:
+def ask_about_other_addons(*wow_dirs: Path) -> None:
     """The one question that matters most: WoW lets every addon read and send what we do."""
     config = userconfig.read_config()
     trusted = list(config.get("trusted_addons") or [])
-    others = addonfiles.other_addons_in(wow_dir, trusted)
+    others = sorted({name for wow_dir in wow_dirs for name in addonfiles.other_addons_in(wow_dir, trusted)})
     if not others:
         return
     names = ", ".join(others[:6]) + (f" and {len(others) - 6} more" if len(others) > 6 else "")
@@ -36,6 +36,28 @@ def ask(prompt: str) -> str:
         return input(prompt).strip()
     except EOFError:
         return ""
+
+
+def choose_clients(found: list[Path], saved: list[Path]) -> list[Path]:
+    """Which WoW clients get Prompt Peon. You choose when there's more than one. Pressing Enter keeps what you
+    have, or takes them all the first time. With nobody there to ask, it does the same."""
+    clients = list(dict.fromkeys([*saved, *found]))
+    current = [client for client in clients if client in saved] or clients
+    if len(clients) < 2 or not sys.stdin.isatty():
+        return current
+    print("\nPrompt Peon can go in any of these, and the companion app follows whichever game you open:")
+    for number, client in enumerate(clients, 1):
+        print(f"  {number}. [{'x' if client in current else ' '}] {settings.CLIENT_NAMES.get(client.name, client.name)}: {client}")
+    for _ in range(3):
+        answer = ask("Type the numbers you want, like 1 3, or press Enter to keep the ticked ones: ")
+        if not answer:
+            return current
+        picks = answer.replace(",", " ").split()
+        if picks and all(pick.isdigit() and 1 <= int(pick) <= len(clients) for pick in picks):
+            chosen = {int(pick) for pick in picks}
+            return [client for number, client in enumerate(clients, 1) if number in chosen]
+        print(f"That didn't work. Use numbers from 1 to {len(clients)}.")
+    return current
 
 
 def wants_full_access(choice: bool | None) -> bool:

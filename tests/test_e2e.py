@@ -8,6 +8,7 @@ import base64
 import hashlib
 import json
 import os
+import shutil
 import struct
 import subprocess
 import sys
@@ -166,6 +167,43 @@ class EndToEnd(unittest.TestCase):
         gone = run(wrapper(home, "uninstall"), "--yes", cwd=home, input="")
         self.assertFalse(home.exists(), gone.stdout + gone.stderr)
         self.assertFalse((self.wow / "Interface/AddOns/PromptPeon").exists(), gone.stdout + gone.stderr)
+
+    def test_the_app_follows_the_game_you_open(self):
+        era, retail = self.wow, self.wow.parent / "_retail_"
+        retail.mkdir()
+        (retail / "Wow.exe").write_text("")
+        for client in (era, retail):
+            done = self.cli("install", "--wow-dir", str(client), "--url", self.url, "--no-start", stdin=TOKEN + "\n")
+            self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        config = self.dir / "cfg/prompt-peon/config.json"
+        # So this test never asks GitHub, and everything else in it is local.
+        config.write_text(json.dumps(dict(json.loads(config.read_text()), update_check=False)))
+
+        def open_game(client, program):
+            if os.name == "nt":  # A real program under that name, because Windows looks at running programs.
+                shutil.copy(Path(os.environ["SystemRoot"]) / "System32/PING.EXE", client / program)
+                game = subprocess.Popen([str(client / program), "-n", "120", "127.0.0.1"], stdout=subprocess.DEVNULL)
+            else:
+                game = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(120)", str(client / program)])
+            self.addCleanup(game.wait)
+            self.addCleanup(game.kill)
+            return game
+
+        def has_threads(client):
+            path = client / "Interface/AddOns/PromptPeon/Snapshot.lua"
+            return path.exists() and "A thread" in path.read_text(errors="replace")
+
+        self.process = subprocess.Popen([sys.executable, str(ROOT / "bridge/promptpeon_bridge.py"), "run"],
+                                        env=self.env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        game = open_game(retail, "Wow.exe")
+        self.wait_for(lambda: has_threads(retail))
+        self.assertFalse(has_threads(era), "only the open game gets thread text")
+        game.kill()
+        game.wait()
+        self.wait_for(lambda: not has_threads(retail))
+        open_game(era, "WowClassic.exe")
+        self.wait_for(lambda: has_threads(era))
+        self.assertFalse(has_threads(retail), "and the one you left stays clear")
 
     @unittest.skipUnless(os.name == "nt", "On Linux the switch would touch this machine's real service")
     def test_the_switch_turns_the_real_app_off_and_on(self):

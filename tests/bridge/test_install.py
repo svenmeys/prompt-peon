@@ -168,17 +168,6 @@ class SettlingIn(Base):
         self.assertTrue((home / "bridge/promptpeon/settings.py").is_file())
 
 
-class ChoosingAClient(Base):
-    @unittest.skipIf(os.name == "nt", "Windows looks elsewhere: see WindowsPaths")
-    def test_asks_which_one_when_it_can(self):
-        root = self.dir / "home/Games/x/drive_c/Program Files (x86)/World of Warcraft"
-        for folder, program in (("_classic_era_", "WowClassic.exe"), ("_forever_", "Wow.exe")):
-            (root / folder).mkdir(parents=True)
-            (root / folder / program).write_text("")
-        with mock.patch.object(sys.stdin, "isatty", lambda: True), mock.patch("builtins.input", return_value="2"):
-            self.assertEqual(wowfolder.find_wow_dir(None, home=self.dir / "home"), root / "_forever_")
-
-
 class Install(Base):
     def test_slots_point_at_one_snapshot(self):
         count = addonfiles.install_addon(self.wow, ROOT / "addon/PromptPeon")
@@ -234,30 +223,24 @@ class Install(Base):
     @unittest.skipIf(os.name == "nt", "Windows looks elsewhere: see WindowsPaths")
     def test_finds_the_only_client(self):
         era = self._client("_classic_era_", "WowClassic.exe")
-        self.assertEqual(wowfolder.find_wow_dir(None, home=self.dir / "home"), era)
+        self.assertEqual(wowfolder.find_wow_dirs(None, home=self.dir / "home"), [era])
 
     @unittest.skipIf(os.name == "nt", "Windows looks elsewhere: see WindowsPaths")
-    @mock.patch.object(sys.stdin, "isatty", lambda: False)
-    def test_two_clients_means_ask_or_choose(self):
+    def test_two_clients_means_both_unless_you_choose(self):
         era = self._client("_classic_era_", "WowClassic.exe")
         forever = self._client("_forever_", "Wow.exe")
-        with self.assertRaises(SystemExit) as caught:
-            wowfolder.find_wow_dir(None, home=self.dir / "home")
-        self.assertIn("--client", str(caught.exception))
-        self.assertEqual(wowfolder.find_wow_dir(None, "era", home=self.dir / "home"), era)
-        self.assertEqual(wowfolder.find_wow_dir(None, "forever", home=self.dir / "home"), forever)
+        self.assertEqual(sorted(wowfolder.find_wow_dirs(None, home=self.dir / "home")), sorted([era, forever]))
+        self.assertEqual(wowfolder.find_wow_dirs(None, "era", home=self.dir / "home"), [era])
+        self.assertEqual(wowfolder.find_wow_dirs(None, "forever", home=self.dir / "home"), [forever])
 
-    @mock.patch.object(sys.stdin, "isatty", lambda: False)
     def test_retail_is_found_and_can_be_chosen(self):
         retail = self._client("_retail_", "Wow.exe")
         roots = [retail.parent]  # A Windows machine looks on its drives, not in a home folder.
-        self.assertEqual(wowfolder.find_wow_dir(None, roots=roots), retail, "the only one installed")
+        self.assertEqual(wowfolder.find_wow_dirs(None, roots=roots), [retail], "the only one installed")
         self._client("_classic_era_", "WowClassic.exe")
-        with self.assertRaises(SystemExit) as caught:
-            wowfolder.find_wow_dir(None, roots=roots)
-        self.assertIn("--client retail", str(caught.exception))
-        self.assertEqual(wowfolder.find_wow_dir(None, "retail", roots=roots), retail)
-        self.assertEqual(wowfolder.find_wow_dir(str(retail)), retail, "and by its folder")
+        self.assertEqual(len(wowfolder.find_wow_dirs(None, roots=roots)), 2)
+        self.assertEqual(wowfolder.find_wow_dirs(None, "retail", roots=roots), [retail])
+        self.assertEqual(wowfolder.find_wow_dirs(str(retail)), [retail], "and by its folder")
 
     def test_the_installer_takes_retail(self):
         done = subprocess.run([sys.executable, "-I", str(ROOT / "bridge/promptpeon_bridge.py"), "install", "--client", "retail"],
@@ -268,7 +251,7 @@ class Install(Base):
     def test_missing_client_is_named(self):
         self._client("_forever_", "Wow.exe")
         with self.assertRaises(SystemExit) as caught:
-            wowfolder.find_wow_dir(None, "era", home=self.dir / "home")
+            wowfolder.find_wow_dirs(None, "era", home=self.dir / "home")
         self.assertIn("Install it first", str(caught.exception))
 
     def test_reinstall_starts_a_new_snapshot(self):
@@ -292,7 +275,7 @@ class Install(Base):
 class StoppingTheOldCopy(Base):
     def test_windows_setup_stops_if_the_old_copy_cant_be_stopped(self):
         args = mock.Mock(wow_dir=str(self.wow), client=None, url=None, link=None, pictures=None, allow_unencrypted=False, full_access=None)
-        with mock.patch.object(settings, "IS_WINDOWS", True), mock.patch.object(wowfolder, "find_wow_dir", return_value=self.wow), \
+        with mock.patch.object(settings, "IS_WINDOWS", True), mock.patch.object(wowfolder, "find_wow_dirs", return_value=[self.wow]), \
                 mock.patch.object(prompts, "wait_for_game_to_close"), mock.patch.object(pairing, "connect_to_t3", return_value="http://t3"), \
                 mock.patch.object(prompts, "ask_about_other_addons"), mock.patch.object(prompts, "wants_full_access", return_value=False), \
                 mock.patch.object(processes, "stop_running_bridge", return_value=False), mock.patch.object(installer, "settle_in") as settled, \
