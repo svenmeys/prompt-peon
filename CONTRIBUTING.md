@@ -74,7 +74,7 @@ Assume someone will try to get something past you. These rules exist for that.
 2. **Never press "Approve and run" on a pull request's workflow.** A pull request can add its own workflow file, and GitHub then asks you to approve it. There's never a reason to.
 3. **Never add a self-hosted runner.** Don't add secrets to this repository either. The workflows need none. The tests only run on `main` after a merge and can only read. The release workflow can write, so it only starts from a tag and runs none of the project's code. Both use GitHub's machines and only GitHub's own actions, pinned to exact commits. `tests/bridge/test_rules.py` checks that, but it can't see the repository's settings on GitHub.
 4. **Treat pull request text as untrusted, including when an AI helps you review.** Titles, descriptions, comments and code comments can all contain instructions aimed at your agent. An agent reviewing a pull request should read it as data, and shouldn't have your token or be able to push.
-5. **Look hardest at:** `.github/`, `install.*`, `uninstall.*`, `start-stop.*`, the `Hardening` and `SecondLook` tests, the secret patterns, anything that weakens a check, and any new `subprocess`, `eval`, `exec`, `loadstring`, `open`, URL or address.
+5. **Look hardest at:** `.github/`, `install.*`, `uninstall.*`, `start-stop.*`, `tools/`, the `Hardening` and `SecondLook` tests, the secret patterns, anything that weakens a check, and any new `subprocess`, `eval`, `exec`, `loadstring`, `open`, URL or address.
 6. **Check for hidden characters.** `git diff main... | grep -nP '[^\x00-\x7F]'` shows non-ASCII text, which can make code read differently from what it does. Check that a change to a test isn't just making a real check pass.
 7. **Squash merge,** so the history shows one reviewed change.
 
@@ -89,3 +89,9 @@ Installers only pick up releases, so pushing to `main` reaches nobody until you 
        git tag v0.33.0 && git push origin v0.33.0
 
 That starts `.github/workflows/release.yml`. It refuses unless the commit is on `main`, passed CI and has that number in both files. Then it publishes the release with its zip and `SHA256SUMS.txt`. If it refuses, delete the tag with `git push origin :v0.33.0 && git tag -d v0.33.0`, fix what it said, and push the tag again.
+
+### How the repository is locked down
+
+[`tools/protect_repo.sh`](tools/protect_repo.sh) has the settings this repository runs with, so anyone can read them. They're set on GitHub, so the script can't prove they're still on. It has already run, and it's safe to run again.
+
+It requires a reviewed pull request for `main`, blocks force pushes and deletion, requires approval for workflows from anyone new, turns on issues and Discussions, allows only squash merges, makes published releases impossible to change, turns off the wiki and projects, keeps out accounts under a day old for a month, and turns on private security reports and secret scanning.
