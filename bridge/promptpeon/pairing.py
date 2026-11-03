@@ -112,7 +112,7 @@ def make_link() -> int:
         print("T3 didn't make a link. Is it running?")
         return 1
     print(f"Copy this link:\n\n  {link}\n")
-    print("On the game machine, double-click install.cmd and paste it when it asks. (On Linux or a Steam Deck: sh install.sh)")
+    print("On the game machine, double-click install.cmd and paste it when it asks. (On Linux or SteamOS: sh install.sh)")
     print("It works once, for 15 minutes. Whoever has it can read your threads and send to them, so keep it to yourself.")
     return 0
 

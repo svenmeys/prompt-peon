@@ -13,7 +13,7 @@ The small program that runs next to WoW and talks to T3 for the addon. This page
 
 ## When it runs
 
-| | Windows | Linux, Steam Deck |
+| | Windows | Linux, SteamOS |
 | --- | --- | --- |
 | Starts | At login, from the `PromptPeon` value in `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` | At login, as the systemd user service `prompt-peon` |
 | Python | Runs in isolated mode (`-I`), so settings like `PYTHONPATH` can't change what it loads | The same |
