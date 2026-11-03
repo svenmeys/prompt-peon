@@ -1,0 +1,5 @@
+<Bindings>
+  <Binding name="PROMPTPEON_TOGGLE" header="PROMPTPEON">
+    if PromptPeon_Toggle then PromptPeon_Toggle() end
+  </Binding>
+</Bindings>

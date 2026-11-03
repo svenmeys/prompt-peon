@@ -1,0 +1,40 @@
+name: Bug report
+description: Something in Prompt Peon doesn't work.
+body:
+  - type: markdown
+    attributes:
+      value: Never paste your `token` file or your `WTF` folder. The token is your T3 access, and `WTF` can hold unsent messages.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what you expected
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: How to make it happen again
+    validations:
+      required: true
+  - type: dropdown
+    id: edition
+    attributes:
+      label: WoW edition
+      options:
+        - Classic Era
+        - Retail
+        - WoW Forever
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Prompt Peon version and your system
+      placeholder: 0.29.0, Windows 11
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: Screenshot or log
+      description: The installer's text, a screenshot, or the companion app's log. Check nothing private shows.

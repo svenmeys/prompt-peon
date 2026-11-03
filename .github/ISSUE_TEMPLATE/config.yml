@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Idea or feature request
+    url: https://github.com/svenmeys/prompt-peon/discussions/categories/ideas
+    about: Ideas start in Discussions, and need a maintainer's yes before anyone builds them.
+  - name: Security problem
+    url: https://github.com/svenmeys/prompt-peon/security/advisories/new
+    about: Report it privately. Please don't open a public issue for it.

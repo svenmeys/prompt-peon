@@ -1,0 +1,7 @@
+# Not needed to run it, so they stay out of the Download ZIP. They stay in the repository.
+tests export-ignore
+docs/images export-ignore
+.github export-ignore
+tools_protect_repo.sh export-ignore
+.gitattributes export-ignore
+.gitignore export-ignore

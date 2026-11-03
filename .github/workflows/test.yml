@@ -1,0 +1,48 @@
+name: test
+
+# Locked down on purpose. Please don't loosen this in a PR: CONTRIBUTING.md says why.
+#
+# - It only runs on what's already on main, so code from a pull request never runs here
+#   until someone has read it and merged it. That's why there's no pull_request trigger,
+#   and there must never be a pull_request_target one.
+# - It only runs on GitHub's own machines. Never add a self-hosted runner: tests are code,
+#   and that code would run on someone's real computer.
+# - It holds no secrets and can only read. Every action is pinned to an exact commit,
+#   because a tag can be moved to point at different code.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    if: github.repository == 'svenmeys/prompt-peon' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.x" # Always the newest Python, so a new one breaking something shows up here first.
+      - run: sudo apt-get update && sudo apt-get install -y luajit
+      - run: luajit tests/test_addon.lua
+      - run: python tests/test_bridge.py
+      - run: python tests/test_e2e.py
+  windows:
+    if: github.repository == 'svenmeys/prompt-peon' && github.ref == 'refs/heads/main'
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.14" # What the installer fetches: the newest Python winget has.
+      - run: python tests/test_bridge.py
+      - run: python tests/test_e2e.py

@@ -1,0 +1,46 @@
+name: release
+
+# Pushing a tag like v1.2.3 publishes that release. Only someone with write access can push a tag,
+# and nothing in a pull request can start this.
+#
+# - This is the one workflow that can write, so it runs none of the project's code. It only checks,
+#   zips and publishes. The tests ran on main, and it refuses if they didn't pass on this commit.
+# - Everything goes up in one step, because a published release can't be changed.
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  release:
+    if: github.repository == 'svenmeys/prompt-peon'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Check the tag, the version and the tests
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          grep -qx "VERSION = \"$VERSION\"" bridge/promptpeon/settings.py || { echo "settings.py doesn't say $VERSION."; exit 1; }
+          tr -d '\r' < addon/PromptPeon/PromptPeon.toc | grep -qx "## Version: $VERSION" || { echo "PromptPeon.toc doesn't say $VERSION."; exit 1; }
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main || { echo "This commit isn't on main."; exit 1; }
+          CI=$(gh run list --commit "$GITHUB_SHA" --workflow test.yml --json conclusion --jq '.[0].conclusion')
+          [ "$CI" = success ] || { echo "The tests on this commit say '$CI'. Wait for them, then push the tag again."; exit 1; }
+      - name: Zip it, make the checksum and publish
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          ZIP="prompt-peon-$VERSION.zip"
+          git archive --format=zip --prefix="prompt-peon-$VERSION/" -o "$RUNNER_TEMP/$ZIP" "$GITHUB_SHA"
+          cd "$RUNNER_TEMP"
+          sha256sum "$ZIP" > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+          gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes "$ZIP" SHA256SUMS.txt

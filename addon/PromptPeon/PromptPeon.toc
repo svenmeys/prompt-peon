@@ -1,0 +1,41 @@
+## Interface: 16001
+## Title: Prompt Peon
+## Notes: Your T3 Code agents inside WoW, as a quest log and a party. Needs the companion app running on this machine.
+## Author: Sven Meys
+## Version: 0.32.0
+## SavedVariables: PromptPeonDB, PromptPeonOutbox
+## IconTexture: Interface\QuestFrame\UI-QuestLog-BookIcon
+## Category: Prompt Peon
+
+Snapshot.lua
+Core.lua
+CoreMarkdown.lua
+CoreIngest.lua
+CoreNotice.lua
+CoreRefresh.lua
+CoreEncode.lua
+CoreSend.lua
+CoreStartup.lua
+Chat.lua
+UI.lua
+UITracker.lua
+UIMenus.lua
+UIControls.lua
+UIOptions.lua
+UIParty.lua
+UILayout.lua
+UIFrame.lua
+UIList.lua
+UIDetail.lua
+UICanvas.lua
+UIChanges.lua
+UIPages.lua
+UIPullRequests.lua
+UIMessages.lua
+UIReply.lua
+UIRender.lua
+Game.lua
+GameAway.lua
+GameLoot.lua
+GameAchievements.lua
+GameSpells.lua
