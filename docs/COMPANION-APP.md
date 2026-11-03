@@ -20,7 +20,7 @@ The small program that runs next to WoW and talks to T3 for the addon. This page
 | Runs as | `pythonw`, so no window | `python3`, restarted if it stops |
 | Needs admin | No | No |
 
-It's always running but idle until it sees the game. It looks every 5 seconds. While the game runs, it asks T3 for changes every 5 seconds and checks for replies every second. Only one copy can run at a time.
+It's always running but idle until it sees the game. It looks every 5 seconds. While the game runs, it asks T3 for changes every 5 seconds, or every 15 over T3 Connect, and checks for replies every second. Only one copy can run at a time.
 
 macOS isn't supported.
 
@@ -43,7 +43,7 @@ Except for that question to GitHub, all of it goes to the T3 address you gave it
 
 | When | What it asks T3 | Why |
 | --- | --- | --- |
-| Every 5 seconds | The thread list, and the messages of threads that changed | The log |
+| Every 5 seconds, or 15 over T3 Connect | The thread list, and the messages of threads that changed | The log |
 | Every 10 minutes | The list of models | The model picker |
 | When you open something | A diff, a subagent's report, older messages, a settled thread, a pull request's description, checks, comments and commits | Reading |
 | For recent threads with a picture, if you turned pictures on. This happens by itself, not only when you open one | The picture file | Previews |

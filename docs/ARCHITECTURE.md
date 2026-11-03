@@ -61,7 +61,7 @@ sequenceDiagram
     participant App as Companion app
     participant File as Snapshot.lua
     participant Addon
-    loop every 5 seconds
+    loop every 5 seconds, or 15 over T3 Connect
         App->>T3: list threads, fetch what changed
         App->>File: write, if anything changed
     end
