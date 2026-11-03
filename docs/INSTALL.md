@@ -107,9 +107,9 @@ If you have more than one WoW client, you choose which ones get Prompt Peon, and
 **It worked if** it ends with these lines. The number of threads should match the machine you meant to connect to:
 
 ```
-Connected to T3 at https://... 12 open threads.
-Installed the addon and 1096 helper entries.
-The companion app is running, and starts with Windows from now on.
+[ok] Connected to T3 at https://... 12 open threads.
+[ok] Installed the addon and 1096 helper entries.
+[ok] The companion app is running, and starts with Windows from now on.
 
 Done. Start the game, or restart it if it is open, and type /peon.
 ```

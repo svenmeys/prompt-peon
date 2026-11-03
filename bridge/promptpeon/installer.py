@@ -5,7 +5,7 @@ import json
 import sys
 from pathlib import Path
 
-from . import addonfiles, autostart, pairing, processes, prompts, safefiles, settings, updater, userconfig, wowfolder
+from . import addonfiles, autostart, pairing, processes, prompts, safefiles, screen, settings, updater, userconfig, wowfolder
 
 
 def settle_in(script: Path, addon_source: Path) -> tuple[Path, Path]:
@@ -70,36 +70,40 @@ def install(args) -> None:
                  "Get it from https://www.python.org/downloads/ and run this again.")
     if sys.stdin.isatty() and not args.no_update:
         updater.use_the_latest(sys.argv[1:])
-    print(f"Prompt Peon {settings.VERSION} setup\n")
-    print("Free software with no warranty, so use it at your own risk. It sends real instructions to real")
-    print("agents on your T3 machine. It isn't made or endorsed by Blizzard or by T3.\n")
+    screen.title(f"Prompt Peon {settings.VERSION} setup")
+    screen.say("Free software with no warranty, so use it at your own risk. It sends real instructions to real agents on your T3 machine. It isn't made or endorsed by Blizzard or by T3.")
+    screen.step(1, 4, "Looking for WoW")
     wow_dirs, dropped = clients_to_use(args)
     for wow_dir in wow_dirs:
-        print(f"Using {settings.CLIENT_NAMES[wow_dir.name]}: {wow_dir}")
+        screen.ok(f"Using {settings.CLIENT_NAMES[wow_dir.name]}: {wow_dir}")
     for wow_dir in [*wow_dirs, *dropped]:
         prompts.wait_for_game_to_close(wow_dir)
+    screen.step(2, 4, "Connecting to T3")
     url = pairing.connect_to_t3(args.url, args.link, args.pictures, args.allow_unencrypted)
+    screen.step(3, 4, "Your addons and agents")
     prompts.ask_about_other_addons(*wow_dirs)
     full_access = prompts.wants_full_access(args.full_access)
+    screen.step(4, 4, "Installing")
     if settings.IS_WINDOWS and not processes.stop_running_bridge():
         sys.exit("The companion app is still running, so nothing changed. Close pythonw.exe in Task Manager and run this again.")
     script, addon_source = settle_in(settings.PROGRAM_DIR / settings.ENTRY_POINT, Path(args.addon_source))
     counts = [addonfiles.place_addon(wow_dir, addon_source) for wow_dir in wow_dirs]
     for folder in dropped:
         _taken, stuck = addonfiles.remove_from_client(folder)
-        print(f"Removed Prompt Peon from {settings.CLIENT_NAMES.get(folder.name, folder.name)}." if not stuck else
-              f"Couldn't remove all of Prompt Peon from {folder}: {', '.join(stuck[:3])}")
+        (screen.say if stuck else screen.ok)(f"Couldn't remove all of Prompt Peon from {folder}: {', '.join(stuck[:3])}" if stuck else
+                                             f"Removed Prompt Peon from {settings.CLIENT_NAMES.get(folder.name, folder.name)}.")
     chosen = [str(wow_dir) for wow_dir in wow_dirs]
     saved = userconfig.read_config()
     # The app starts here and follows whichever game opens, so this is only where it begins.
     wow_dir = saved.get("wow_dir") if saved.get("wow_dir") in chosen else chosen[0]
     safefiles.write_atomic(settings.CONFIG_DIR / "config.json", json.dumps(dict(userconfig.read_config(), url=url, wow_dir=wow_dir, wow_dirs=chosen, full_access=full_access), indent=2))
-    print(f"Installed the addon and {counts[0]} helper entries" + (f" in all {len(counts)} clients." if len(counts) > 1 else "."))
+    screen.ok(f"Installed the addon and {counts[0]} helper entries" + (f" in {len(counts)} clients." if len(counts) > 1 else "."))
     if args.no_start:
         pass
     elif settings.IS_WINDOWS:
         autostart.enable_windows_autostart(script)
-        print("The companion app is running, and starts with Windows from now on.")
+        screen.ok("The companion app is running, and starts with Windows from now on.")
     else:
-        print(autostart.start_linux_service(script))
-    print("\nDone. Start the game, or restart it if it is open, and type /peon.")
+        started = autostart.start_linux_service(script)
+        (screen.ok if started.startswith("The companion app is running") else screen.say)(started)
+    screen.done("Done. Start the game, or restart it if it is open, and type /peon.")
