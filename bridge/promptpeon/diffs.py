@@ -85,6 +85,12 @@ def patch_pages(patch: str) -> list[list]:
     return pages
 
 
+def linked_pull_request(thread: dict, argument: str) -> dict | None:
+    """Only one this thread really links, so the game can't ask about anything else."""
+    number = int(argument) if argument.strip().isdigit() else None
+    return next((link for link in thread.get("pullRequests") or [] if link.get("number") == number), None)
+
+
 def load_diff(bridge, thread_id: str) -> None:
     diff = bridge.remote.thread_diff(thread_id)
     note = ""
@@ -93,15 +99,42 @@ def load_diff(bridge, thread_id: str) -> None:
     elif len(diff) >= settings.T3_DIFF_LIMIT:
         note = "T3 cuts diffs off at 10 MB, so some files may be missing here."
     files = parse_diff(diff)
-    bridge.patches = {"thread": thread_id, "files": {row[0]: row[3] for row in files}}
-    bridge.keep_loaded(thread_id, df=fit_patches(files), dn=note)
+    bridge.patches = {"thread": thread_id, "pr": 0, "files": {row[0]: row[3] for row in files}}
+    bridge.keep_loaded(thread_id, df=fit_patches(files), dn=note, dp=0)
 
 
-def load_file_page(bridge, thread_id: str, argument: str) -> str:
-    path, _, wanted = argument.partition("\n")
-    if bridge.patches.get("thread") != thread_id:
-        files = parse_diff(bridge.remote.thread_diff(thread_id))
-        bridge.patches = {"thread": thread_id, "files": {row[0]: row[3] for row in files}}
+def load_pull_request_diff(bridge, thread: dict, argument: str) -> str:
+    """One pull request's own files, for going into it. Sent the same way as the thread's changes."""
+    link = linked_pull_request(thread, argument)
+    if link is None:
+        return "failed: that pull request isn't linked to this thread"
+    patch, cut = bridge.remote.pr_diff(thread.get("projectId"), link)
+    note = ""
+    if not patch:
+        note = "T3 has no changes to show for this pull request."
+    elif cut:
+        note = "This diff got cut off, so some files may be missing here. GitHub has all of it."
+    files = parse_diff(patch)
+    number = link["number"]
+    bridge.patches = {"thread": thread["id"], "pr": number, "files": {row[0]: row[3] for row in files}}
+    bridge.keep_loaded(thread["id"], df=fit_patches(files), dn=note, dp=number)
+    return "sent"
+
+
+def load_file_page(bridge, thread: dict, argument: str) -> str:
+    """A page of a big file, from the thread's changes, or from a pull request's when it names one."""
+    thread_id = thread["id"]
+    path, _, rest = argument.partition("\n")
+    wanted, _, pull_request = rest.partition("\n")
+    number = int(pull_request) if pull_request.strip().isdigit() else 0
+    if bridge.patches.get("thread") != thread_id or bridge.patches.get("pr", 0) != number:
+        if number:
+            answer = load_pull_request_diff(bridge, thread, pull_request)
+            if answer != "sent":
+                return answer
+        else:
+            files = parse_diff(bridge.remote.thread_diff(thread_id))
+            bridge.patches = {"thread": thread_id, "pr": 0, "files": {row[0]: row[3] for row in files}}
     patch = bridge.patches["files"].get(path)
     if patch is None:
         return "failed: that file can't be shown here"

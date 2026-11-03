@@ -245,6 +245,17 @@ function UI:DrawPullRequests(canvas, thread)
       end
       if (page.cm or 0) > 0 then add(page.cm .. " more in T3.", DIM_R, DIM_G, DIM_B, "PromptPeonSmall", 15) end
     end
+    if section("files", "Files changed" .. (pr.f and (" (" .. pr.f .. ")") or ""), diffCounts(pr.a or 0, pr.d or 0), false) then
+      local kept = ns.loaded[thread.id] or {}
+      if kept.dp ~= pr.n or not kept.df then
+        self:AskPullRequestDiff(thread, pr)
+        add(self:LoadingWords(thread), DIM_R, DIM_G, DIM_B, "PromptPeonSmall", 15)
+      else
+        if kept.dn and kept.dn ~= "" then add(ns.Plain(kept.dn), DIM_R, DIM_G, DIM_B, "PromptPeonSmall", 15) end
+        self:DrawDiffFiles(canvas, thread)
+      end
+      canvas.y = canvas.y + 4
+    end
     if page.ds and section("discussion", "Discussion (" .. (page.dn or #page.ds) .. ")", nil, true) then drawDiscussion(page, key .. ":discussion") end
     if page.tl and section("timeline", "Timeline (" .. #page.tl .. ")", nil, false) then drawTimeline(page, key .. ":timeline") end
   end

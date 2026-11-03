@@ -245,7 +245,13 @@ function UI:IsLoading(thread)
     return true
   end
   if view == "prs" then
+    if self.askedFile and GetTime() - (self.askedFileAt or 0) <= LOAD_PATIENCE and kept.dp and kept.dp ~= 0
+      and not (kept.pages and kept.pages[self.askedFile]) then
+      return true
+    end
     for _, pr in ipairs(thread.prs or {}) do
+      local diffAsked = self.prAsked[thread.id .. ":" .. pr.n .. ":diff"]
+      if diffAsked and GetTime() - diffAsked <= LOAD_PATIENCE and kept.dp == nil then return true end
       local asked = self.prAsked[thread.id .. ":" .. pr.n]
       if asked and GetTime() - asked <= LOAD_PATIENCE and not (kept.pullRequests and kept.pullRequests[pr.n]) then return true end
     end
@@ -261,6 +267,17 @@ function UI:AskPullRequest(thread, pr)
   if not self.prAsked[key] or GetTime() - self.prAsked[key] > LOAD_PATIENCE then
     self.prAsked[key] = GetTime()
     ns:QueueCommand(thread.id, "pr", tostring(pr.n))
+  end
+end
+
+--- One pull request's own files. Only one diff is kept at a time, so what's there may be another's.
+function UI:AskPullRequestDiff(thread, pr)
+  local key = thread.id .. ":" .. pr.n .. ":diff"
+  if not self.prAsked[key] or GetTime() - self.prAsked[key] > LOAD_PATIENCE then
+    self.prAsked[key] = GetTime()
+    local kept = ns.loaded[thread.id]
+    if kept then kept.df, kept.dn, kept.dp, kept.pages = nil, nil, nil, nil end
+    ns:QueueCommand(thread.id, "prdiff", tostring(pr.n))
   end
 end
 
@@ -280,7 +297,8 @@ function UI:AskFilePage(thread, path, number)
   local wanted = path .. "\n" .. number
   if kept and kept.pages and kept.pages[wanted] then return end
   self.askedFile, self.askedFileAt = wanted, GetTime()
-  ns:QueueCommand(thread.id, "file", wanted)
+  local pullRequest = kept and kept.dp and kept.dp ~= 0 and ("\n" .. kept.dp) or ""
+  ns:QueueCommand(thread.id, "file", wanted .. pullRequest)
 end
 
 function UI:LoadingWords(thread)
