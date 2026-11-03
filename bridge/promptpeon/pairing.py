@@ -13,7 +13,11 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-from . import prompts, safefiles, settings, t3remote, threadstate, userconfig
+from . import prompts, safefiles, screen, settings, t3remote, threadstate, userconfig
+
+
+def open_threads(count: int) -> str:
+    return "1 open thread" if count == 1 else f"{count} open threads"
 
 
 def parse_pair_link(text: str) -> tuple[str, str] | None:
@@ -53,7 +57,7 @@ def exchange_pair_code(url: str, code: str, scopes: list[str]) -> str:
     if any(scope not in scopes for scope in granted):
         sys.exit("T3 gave this link more access than we asked for, so it wasn't used. Make a new one with only the access Prompt Peon needs.")
     if settings.PICTURE_SCOPE in scopes and settings.PICTURE_SCOPE not in granted:
-        print("That link doesn't allow reading files, so pictures from files stay off. Everything else works.")
+        screen.say("That link doesn't allow reading files, so pictures from files stay off. Everything else works.")
     return token
 
 
@@ -94,13 +98,13 @@ def make_link() -> int:
     It allows pictures, because the installer asks about those and only requests what you said yes to."""
     program = t3_program()
     if not program:
-        print("T3 isn't on this machine. Run this on the machine your threads are on.")
+        screen.say("T3 isn't on this machine. Run this on the machine your threads are on.")
         return 1
     address = connect_address()
     if not address:
-        print("Couldn't find T3 Connect running here. Run this on the machine your threads are on, not the one you play on.")
-        print("If this is that machine, turn T3 Connect on in T3's settings. It can't be found on a Windows machine yet,")
-        print("so there, use Tailscale: t3 pair --tailscale --ttl 15m")
+        screen.say("Couldn't find T3 Connect running here. Run this on the machine your threads are on, not the one you play on.")
+        screen.say("If this is that machine, turn T3 Connect on in T3's settings. It can't be found on a Windows machine yet,")
+        screen.say("so there, use Tailscale: t3 pair --tailscale --ttl 15m")
         return 1
     command = [program, "auth", "pairing", "create", "--base-url", address, "--ttl", "15m", "--label", "Prompt Peon", "--json"]
     for scope in settings.BASE_SCOPES + [settings.PICTURE_SCOPE]:
@@ -109,11 +113,11 @@ def make_link() -> int:
         done = subprocess.run(command, capture_output=True, text=True, timeout=60)
         link = json.loads(done.stdout)["pairUrl"]
     except (OSError, subprocess.SubprocessError, ValueError, KeyError):
-        print("T3 didn't make a link. Is it running?")
+        screen.say("T3 didn't make a link. Is it running?")
         return 1
-    print(f"Copy this link:\n\n  {link}\n")
-    print("On the game machine, double-click install.cmd and paste it when it asks. (On Linux or SteamOS: sh install.sh)")
-    print("It works once, for 15 minutes. Whoever has it can read your threads and send to them, so keep it to yourself.")
+    screen.say(f"Copy this link:\n\n  {link}\n")
+    screen.say("On the game machine, double-click install.cmd and paste it when it asks. (On Linux or SteamOS: sh install.sh)")
+    screen.say("It works once, for 15 minutes. Whoever has it can read your threads and send to them, so keep it to yourself.")
     return 0
 
 
@@ -122,7 +126,7 @@ def issue_local_token(scopes: list[str]) -> str | None:
     program = t3_program()
     if not program or not t3_answers(settings.DEFAULT_URL):
         return None
-    print("This access lasts a year. You can revoke it in T3 under Settings, Sharing & access.")
+    screen.say("This access lasts a year. You can revoke it in T3 under Settings, Sharing & access.")
     label = f"Prompt Peon {time.strftime('%Y-%m-%d')}"  # So the list in T3 can tell one from another.
     command = [program, "auth", "session", "issue", "--ttl", "365d", "--label", label, "--token-only"]
     for scope in scopes:
@@ -153,8 +157,8 @@ def accept_plain_network(url: str, allowed: bool) -> None:
     """On a plain http address, anyone on that network can read your messages and take your access."""
     if allowed or not is_plain_over_network(url):
         return
-    print(f"\n{url} isn't encrypted. Anyone on that network could read your threads and take your T3 access.")
-    print("Only say yes on a network you trust completely, and never on public or shared wifi.")
+    screen.say(f"\n{url} isn't encrypted. Anyone on that network could read your threads and take your T3 access.")
+    screen.say("Only say yes on a network you trust completely, and never on public or shared wifi.")
     if not sys.stdin.isatty():
         sys.exit("Stopping, because nobody is here to say yes. To allow it, add --allow-unencrypted.")
     if not prompts.ask("Use it anyway? [y/N]: ").lower().startswith("y"):
@@ -174,7 +178,7 @@ def paste_a_link() -> str:
     for _ in range(2):
         if not sys.stdin.isatty() or parse_pair_link(text) or (text and "://" not in text):
             break
-        print("That isn't a link from T3. It looks like https://.../pair#token=...")
+        screen.say("That isn't a link from T3. It looks like https://.../pair#token=...")
         text = prompts.ask("Paste the link here: ")
     return text
 
@@ -187,32 +191,32 @@ def connect_to_t3(url: str | None, link: str | None, pictures: bool | None, allo
     if same_place and not link and pictures is None and (settings.CONFIG_DIR / "token").exists():
         try:
             count = len(threadstate.active_threads(t3remote.T3Remote(saved_url, userconfig.read_token()).shell()))
-            print(f"Already connected to T3 at {saved_url}. {count} open threads.")
+            screen.ok(f"Already connected to T3 at {saved_url}. {open_threads(count)}.")
             if saved_url.rstrip("/") == settings.DEFAULT_URL.rstrip("/"):
-                print(f"Those are this machine's threads. For another machine's, you need a link from there.\n{HOW_TO_GET_A_LINK}")
+                screen.say(f"Those are this machine's threads. For another machine's, you need a link from there.\n{HOW_TO_GET_A_LINK}")
             if is_plain_over_network(saved_url):
-                print("That address isn't encrypted, so only use it on a network you trust completely.")
+                screen.say("That address isn't encrypted, so only use it on a network you trust completely.")
             link = keep_or_paste()
             if not link:
                 shows = "on" if userconfig.read_config().get("pictures") is True else "off"
-                print(f"Pictures are {shows}. To change that, run this again with --pictures or --no-pictures. It may ask for a new link.")
+                screen.say(f"Pictures are {shows}. To change that, run this again with --pictures or --no-pictures. It may ask for a new link.")
                 return saved_url
         except urllib.error.HTTPError as error:
             if error.code not in (401, 403):
                 return saved_url
-            print("Your link to T3 has expired, so we need a new one.")
+            screen.say("Your link to T3 has expired, so we need a new one.")
         except (OSError, ValueError):
-            print(f"Can't reach T3 at {saved_url} right now.")
+            screen.say(f"Can't reach T3 at {saved_url} right now.")
             link = keep_or_paste()
             if not link:
-                print("Keeping your settings.")
+                screen.say("Keeping your settings.")
                 return saved_url
 
     # T3 here only shows threads that live here, so someone with T3 in both places gets to choose.
     t3_here = not link and not url and t3_program() and t3_answers(settings.DEFAULT_URL)
     if t3_here and sys.stdin.isatty():
-        print("\nFound T3 on this machine. It shows the threads on this machine only.")
-        print(f"If your threads are on another machine, even one this T3 app can reach, you need a link from there.\n{HOW_TO_GET_A_LINK}")
+        screen.say("\nFound T3 on this machine. It shows the threads on this machine only.")
+        screen.say(f"If your threads are on another machine, even one this T3 app can reach, you need a link from there.\n{HOW_TO_GET_A_LINK}")
         link = prompts.ask("Press Enter to use this machine, or paste the link: ") or None
     allow_files = None
     token = None
@@ -220,17 +224,17 @@ def connect_to_t3(url: str | None, link: str | None, pictures: bool | None, allo
         allow_files = prompts.wants_pictures(pictures)
         token = issue_local_token(settings.BASE_SCOPES + ([settings.PICTURE_SCOPE] if allow_files else []))
     if token:
-        print("Found T3 on this machine.")
+        screen.say("Found T3 on this machine.")
         target = settings.DEFAULT_URL
     else:
         if not link:
-            print(f"\nNow connect to T3.\n{HOW_TO_GET_A_LINK}")
+            screen.say(f"\nNow connect to T3.\n{HOW_TO_GET_A_LINK}")
         text = link or paste_a_link()
         pair = parse_pair_link(text)
         if pair:
             target, code = pair
-            print(f"\nThis link connects Prompt Peon to {target}.")
-            print("Whoever runs that machine can read what you send and put words in your game.")
+            screen.say(f"\nThis link connects Prompt Peon to {target}.")
+            screen.say("Whoever runs that machine can read what you send and put words in your game.\n")
             if sys.stdin.isatty() and not prompts.ask("Is it your own machine, or one you trust? [y/N]: ").lower().startswith("y"):
                 sys.exit("Nothing changed.")
             accept_plain_network(target, allow_unencrypted)
@@ -239,7 +243,7 @@ def connect_to_t3(url: str | None, link: str | None, pictures: bool | None, allo
         elif text and "://" not in text:
             target, token = url or settings.DEFAULT_URL, text  # A token made by hand works too.
             accept_plain_network(target, allow_unencrypted)
-            print("A token made by hand keeps whatever access it was made with, whatever you answer about pictures.")
+            screen.say("A token made by hand keeps whatever access it was made with, whatever you answer about pictures.")
             allow_files = prompts.wants_pictures(pictures) if allow_files is None else allow_files
         else:
             sys.exit("That isn't a pairing link, so nothing changed. Run this again when you have one.")
@@ -253,5 +257,5 @@ def connect_to_t3(url: str | None, link: str | None, pictures: bool | None, allo
     userconfig.save_token(token)
     settings.CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     safefiles.write_atomic(settings.CONFIG_DIR / "config.json", json.dumps(dict(userconfig.read_config(), url=target, pictures=allow_files), indent=2))
-    print(f"Connected to T3 at {target}. {count} open threads.")
+    screen.ok(f"Connected to T3 at {target}. {open_threads(count)}.")
     return target

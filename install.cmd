@@ -1,6 +1,7 @@
 @echo off
 rem Prompt Peon setup for Windows. Double-click this file.
 setlocal
+title Prompt Peon setup
 if not exist "%~dp0bridge\promptpeon_bridge.py" (
   echo Unpack the ZIP first: right-click it and choose Extract All, then run install.cmd from the new folder.
   goto done

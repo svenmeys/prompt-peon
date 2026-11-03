@@ -14,7 +14,7 @@ import time
 import zipfile
 from pathlib import Path
 
-from . import console, settings, t3remote
+from . import console, screen, settings, t3remote
 
 VERSION_LINE = re.compile(r'^VERSION = "(\d+\.\d+\.\d+)"$', re.M)
 
@@ -114,7 +114,7 @@ def use_the_latest(arguments: list[str]) -> None:
     """Hand over to the newest copy there is: a newer release from GitHub, or a newer install than this download. Only the
     installer does this, and only when you run it yourself: the companion app never updates itself, and nothing in the
     game folder can ask it to."""
-    print("Checking GitHub for a newer version...")
+    screen.say("Checking GitHub for a newer version...")
     installed = installed_version()
     newest_here = installed if installed and is_newer(installed) else settings.VERSION
     folder = None
@@ -125,14 +125,14 @@ def use_the_latest(arguments: list[str]) -> None:
                 folder = Path(tempfile.mkdtemp(prefix="promptpeon-update-"))
                 if unpack_latest(download_release(latest), folder) != latest:
                     raise ValueError(f"release {latest} says it's a different version")
-                print(f"Using {latest} from GitHub, because this copy is {settings.VERSION}.\n")
+                screen.ok(f"Using {latest} from GitHub, because this copy is {settings.VERSION}.")
                 hand_over(folder / "bridge" / settings.ENTRY_POINT, arguments)
             if newest_here == settings.VERSION:
-                print("You have the newest version.\n")
+                screen.ok("You have the newest version.")
         except Exception as error:  # A failed check must never stop an install.
-            print(f"Couldn't get the newest version, so this uses the one you have ({newest_here}): {error}\n")
+            screen.say(f"Couldn't get the newest version, so this uses the one you have ({newest_here}): {error}")
         if newest_here != settings.VERSION:
-            print(f"This copy is {settings.VERSION}, but {newest_here} is already installed, so this uses that.\n")
+            screen.ok(f"This copy is {settings.VERSION}, but {newest_here} is already installed, so this uses that.")
             hand_over(settings.HOME_DIR / "bridge" / settings.ENTRY_POINT, arguments)
     finally:
         if folder:
