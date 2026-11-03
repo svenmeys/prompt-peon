@@ -59,9 +59,8 @@ def run(bridge, *, always: bool = False) -> None:
             if not running and now >= next_clear:
                 delivery.clear_saved_words(bridge)
                 next_clear = now + settings.GAME_CHECK_SECONDS
-            if running and time.monotonic() >= next_refresh:
-                refreshing.refresh(bridge)
-                next_refresh = time.monotonic() + settings.REFRESH_SECONDS
+            if running:
+                next_refresh = refreshing.keep_fresh(bridge, next_refresh)
         except Exception as error:  # On Windows nothing restarts this, so it must not stop.
             console.log(f"loop error, carrying on: {type(error).__name__}: {str(error)[:200]}")
         try:

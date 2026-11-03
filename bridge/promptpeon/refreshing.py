@@ -2,9 +2,28 @@
 from __future__ import annotations
 
 import json
+import time
 import urllib.error
+import urllib.parse
 
 from . import catalog, console, gametext, publishing, settings, t3errors, threadstate
+
+
+def seconds_between(url: str) -> int:
+    host = urllib.parse.urlsplit(url).hostname or ""
+    through_relay = host == settings.RELAY_DOMAIN or host.endswith("." + settings.RELAY_DOMAIN)
+    return settings.RELAY_REFRESH_SECONDS if through_relay else settings.REFRESH_SECONDS
+
+
+def keep_fresh(bridge, next_refresh: float) -> float:
+    """Ask T3 when it's time. In between, keep the game's heartbeat going, so slower asking never reads as the app having stopped."""
+    now = time.monotonic()
+    if now >= next_refresh:
+        refresh(bridge)
+        return time.monotonic() + seconds_between(bridge.remote.url)
+    if now - bridge.last_write_at >= settings.HEARTBEAT_SECONDS:
+        publishing.publish(bridge)
+    return next_refresh
 
 
 def refresh(bridge) -> None:

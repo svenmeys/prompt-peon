@@ -8,7 +8,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-VERSION = "0.32.2"
+VERSION = "0.32.3"
 ENTRY_POINT = "promptpeon_bridge.py"  # Installers, autostart, the service and stopping a running copy all know it by this name.
 PACKAGE = "promptpeon"  # This folder, which sits next to the entry point.
 PROGRAM_DIR = Path(__file__).resolve().parent.parent  # Where the entry point is: bridge/ in a download or an install.
@@ -92,6 +92,8 @@ MAX_SNAPSHOT_BYTES = 8_000_000  # Lua loads 2 MB in about 6 ms. Past this, the o
 TOO_LONG_ROW = ["a", "This thread doesn't fit in the game right now. Open it in T3.", "d", 0]
 MAX_AUDIT_BYTES = 1_000_000
 REFRESH_SECONDS = 5  # Often enough that "Thinking" means thinking.
+RELAY_DOMAIN = "t3coderelay.com"  # T3 Connect: every request here crosses T3's own relay.
+RELAY_REFRESH_SECONDS = 15  # So it goes easier on that. What you send still refreshes straight away.
 HEARTBEAT_SECONDS = 30  # Unchanged data is rewritten this often, so the addon knows we are alive.
 VERSION_CHECK_SECONDS = 60
 GAME_CHECK_SECONDS = 5  # How often to look for the game. tasklist is too slow to run every second.
