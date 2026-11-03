@@ -97,8 +97,91 @@ class TheGameGetsTold(Base):
         self.assertEqual(publishing.update_fields(None), {})
 
 
+class TheInstalledCopyCounts(Base):
+    """An old download run again shouldn't read like a failed update, or put an older version back."""
+
+    def setUp(self):
+        super().setUp()
+        patchers = [mock.patch.object(settings, "HOME_DIR", self.dir / "program"), mock.patch.object(settings, "VERSION", "1.0.0"),
+                    mock.patch("sys.stdout", new_callable=io.StringIO), mock.patch.object(subprocess, "run", return_value=mock.Mock(returncode=3))]
+        for patcher in patchers:
+            self.addCleanup(patcher.stop)
+        _home, _version, self.printed, self.ran = [patcher.start() for patcher in patchers]
+
+    def installed(self, version, script=True):
+        folder = settings.HOME_DIR / "bridge" / settings.PACKAGE
+        folder.mkdir(parents=True)
+        (folder / "settings.py").write_text(f'"""Words."""\nVERSION = "{version}"\nOTHER = 1\n')
+        if script:
+            (folder.parent / settings.ENTRY_POINT).write_text("")
+
+    def run_it(self, github):
+        """GitHub answers with this version, or with this error. Says whether it handed over, and to what."""
+        answer = {"side_effect": github} if isinstance(github, Exception) else {"return_value": github}
+        with mock.patch.object(updater, "latest_release", **answer), \
+                mock.patch.object(updater, "download_release", side_effect=urllib.error.URLError("no download")) as self.fetched:
+            try:
+                updater.use_the_latest(["install"])
+            except SystemExit as stopped:
+                self.assertEqual(stopped.code, 3, "its answer counts")
+                return Path(self.ran.call_args.args[0][2])
+        self.ran.assert_not_called()
+        return None
+
+    def test_an_old_download_uses_the_newest_install_without_downloading(self):
+        self.installed("2.0.0")
+        self.assertEqual(self.run_it("2.0.0"), settings.HOME_DIR / "bridge" / settings.ENTRY_POINT)
+        self.fetched.assert_not_called()
+        self.assertIn("--no-update", self.ran.call_args.args[0])
+        self.assertIn("This copy is 1.0.0, but 2.0.0 is already installed", self.printed.getvalue())
+        self.assertNotIn("Using 2.0.0 from GitHub", self.printed.getvalue())
+
+    def test_with_github_away_an_old_download_never_puts_an_older_version_back(self):
+        self.installed("2.0.0")
+        self.assertEqual(self.run_it(urllib.error.URLError("away")), settings.HOME_DIR / "bridge" / settings.ENTRY_POINT)
+        self.assertIn("2.0.0", self.printed.getvalue())
+
+    def test_a_failed_download_never_puts_an_older_version_back_either(self):
+        self.installed("2.0.0")
+        self.assertEqual(self.run_it("3.0.0"), settings.HOME_DIR / "bridge" / settings.ENTRY_POINT)
+        self.fetched.assert_called_once()
+
+    def test_something_newer_than_the_install_is_still_downloaded(self):
+        self.installed("2.0.0")
+        self.run_it("3.0.0")
+        self.fetched.assert_called_once_with("3.0.0")
+
+    def test_the_installed_copy_running_itself_doesnt_go_round_in_circles(self):
+        self.installed("1.0.0")
+        self.assertIsNone(self.run_it("1.0.0"))
+        self.assertIn("You have the newest version", self.printed.getvalue())
+
+    def test_a_newer_download_goes_ahead_over_an_older_install(self):
+        self.installed("0.5.0")
+        self.assertIsNone(self.run_it("1.0.0"))
+        self.assertIn("You have the newest version", self.printed.getvalue())
+
+    def test_nothing_installed_is_no_problem(self):
+        self.assertIsNone(self.run_it("1.0.0"))
+
+    def test_an_install_it_cant_start_doesnt_count(self):
+        self.installed("2.0.0", script=False)
+        self.assertIsNone(updater.installed_version())
+        self.assertIsNone(self.run_it("1.0.0"))
+
+    def test_an_install_that_cant_say_its_version_doesnt_count(self):
+        self.installed("not a version")
+        self.assertIsNone(updater.installed_version())
+
+
 class InstallerFetchesLatest(Base):
     """Running the installer by hand gets the newest release from GitHub, and nothing else ever does."""
+
+    def setUp(self):
+        super().setUp()
+        patcher = mock.patch.object(settings, "HOME_DIR", self.dir / "program")  # Never this machine's real install.
+        self.addCleanup(patcher.stop)
+        patcher.start()
 
     def release(self, version="9.9.9", script=None, extra=(), version_file=None):
         out = io.BytesIO()

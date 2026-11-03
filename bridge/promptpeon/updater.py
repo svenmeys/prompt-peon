@@ -16,6 +16,8 @@ from pathlib import Path
 
 from . import console, settings, t3remote
 
+VERSION_LINE = re.compile(r'^VERSION = "(\d+\.\d+\.\d+)"$', re.M)
+
 
 def latest_release() -> str:
     """The version of the newest release on GitHub. Nothing of yours goes with the request, and a redirect is refused."""
@@ -27,9 +29,9 @@ def latest_release() -> str:
     return tag[1:]
 
 
-def is_newer(version: str) -> bool:
+def is_newer(version: str, than: str | None = None) -> bool:
     numbers = lambda text: tuple(int(part) for part in text.split("."))
-    return numbers(version) > numbers(settings.VERSION)
+    return numbers(version) > numbers(than or settings.VERSION)
 
 
 def update_notice(version: str) -> str:
@@ -87,32 +89,51 @@ def unpack_latest(data: bytes, target: Path) -> str:
     version_home = target / "bridge" / settings.PACKAGE / "settings.py"
     if not script.is_file() or not version_home.is_file() or not (target / "addon" / settings.ADDON / f"{settings.ADDON}.toc").is_file():
         raise ValueError("the download doesn't have the program in it")
-    found = re.search(r'^VERSION = "(\d+\.\d+\.\d+)"$', version_home.read_text(errors="replace"), re.M)
+    found = VERSION_LINE.search(version_home.read_text(errors="replace"))
     if not found:
         raise ValueError("the download doesn't say which version it is")
     return found.group(1)
 
 
+def installed_version() -> str | None:
+    """What's in the program folder, which may not be the copy running this. None if it can't be run."""
+    program = settings.HOME_DIR / "bridge"
+    try:
+        found = VERSION_LINE.search((program / settings.PACKAGE / "settings.py").read_text(errors="replace"))
+    except OSError:
+        return None
+    return found.group(1) if found and (program / settings.ENTRY_POINT).is_file() else None
+
+
+def hand_over(script: Path, arguments: list[str]) -> None:
+    done = subprocess.run([sys.executable, "-I", str(script), *arguments, "--no-update"])
+    sys.exit(done.returncode)
+
+
 def use_the_latest(arguments: list[str]) -> None:
-    """Hand over to a newer release from GitHub if there is one. Only the installer does this, and only when
-    you run it yourself: the companion app never updates itself, and nothing in the game folder can ask it to."""
+    """Hand over to the newest copy there is: a newer release from GitHub, or a newer install than this download. Only the
+    installer does this, and only when you run it yourself: the companion app never updates itself, and nothing in the
+    game folder can ask it to."""
     print("Checking GitHub for a newer version...")
+    installed = installed_version()
+    newest_here = installed if installed and is_newer(installed) else settings.VERSION
     folder = None
     try:
         try:
             latest = latest_release()
-            if not is_newer(latest):
+            if is_newer(latest, newest_here):
+                folder = Path(tempfile.mkdtemp(prefix="promptpeon-update-"))
+                if unpack_latest(download_release(latest), folder) != latest:
+                    raise ValueError(f"release {latest} says it's a different version")
+                print(f"Using {latest} from GitHub, because this copy is {settings.VERSION}.\n")
+                hand_over(folder / "bridge" / settings.ENTRY_POINT, arguments)
+            if newest_here == settings.VERSION:
                 print("You have the newest version.\n")
-                return
-            folder = Path(tempfile.mkdtemp(prefix="promptpeon-update-"))
-            if unpack_latest(download_release(latest), folder) != latest:
-                raise ValueError(f"release {latest} says it's a different version")
         except Exception as error:  # A failed check must never stop an install.
-            print(f"Couldn't get the newest version, so this uses the one you have ({settings.VERSION}): {error}\n")
-            return
-        print(f"Using {latest} from GitHub. You had {settings.VERSION}.\n")
-        done = subprocess.run([sys.executable, "-I", str(folder / "bridge" / settings.ENTRY_POINT), *arguments, "--no-update"])
-        sys.exit(done.returncode)
+            print(f"Couldn't get the newest version, so this uses the one you have ({newest_here}): {error}\n")
+        if newest_here != settings.VERSION:
+            print(f"This copy is {settings.VERSION}, but {newest_here} is already installed, so this uses that.\n")
+            hand_over(settings.HOME_DIR / "bridge" / settings.ENTRY_POINT, arguments)
     finally:
         if folder:
             shutil.rmtree(folder, ignore_errors=True)
