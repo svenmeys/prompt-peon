@@ -8,11 +8,11 @@ from pathlib import Path
 from . import addonfiles, processes, safefiles, settings, userconfig
 
 
-def ask_about_other_addons(wow_dir: Path) -> None:
+def ask_about_other_addons(*wow_dirs: Path) -> None:
     """The one question that matters most: WoW lets every addon read and send what we do."""
     config = userconfig.read_config()
     trusted = list(config.get("trusted_addons") or [])
-    others = addonfiles.other_addons_in(wow_dir, trusted)
+    others = sorted({name for wow_dir in wow_dirs for name in addonfiles.other_addons_in(wow_dir, trusted)})
     if not others:
         return
     names = ", ".join(others[:6]) + (f" and {len(others) - 6} more" if len(others) > 6 else "")

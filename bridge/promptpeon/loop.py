@@ -24,21 +24,36 @@ def run(bridge, *, always: bool = False) -> None:
 
     # Its own thread: a big PNG takes seconds to convert, and must not hold up replies.
     threading.Thread(target=convert_images, daemon=True, name="previews").start()
-    addonfiles.keep_addon_current(bridge.wow_dir)
+    for client in bridge.clients():
+        addonfiles.keep_addon_current(client)
+    # We may have died with thread text still in a game folder.
     if not always and not processes.game_running(bridge.wow_dir):
-        publishing.go_quiet(bridge)  # We may have died with thread text still in the game folder.
+        publishing.go_quiet(bridge)
+    for client in bridge.clients()[1:]:
+        if not processes.game_running(client):
+            addonfiles.clear_game_folder(client)
+            delivery.clear_saved_words(bridge, client, force=True)
     next_refresh = 0.0
     next_game_check = 0.0
     next_clear = 0.0
     next_version_check = time.monotonic() + settings.VERSION_CHECK_SECONDS
     was_running = False
     running = False
-    if not always:  # That's for testing by hand, and asks for T3 only.
+    # --always is for testing by hand, and asks for T3 only.
+    if not always and bridge.config().get("update_check") is not False:
         threading.Thread(target=updater.watch_for_releases, args=(bridge, lambda: running), daemon=True, name="releases").start()
     while True:
         now = time.monotonic()
         if now >= next_game_check:
-            running = always or processes.game_running(bridge.wow_dir)
+            open_client = bridge.wow_dir if always else processes.running_client(bridge.clients())
+            if open_client and open_client != bridge.wow_dir:
+                console.log(f"the game opened in {open_client.name}, following it")
+                publishing.go_quiet(bridge)
+                delivery.clear_saved_words(bridge, force=True)
+                bridge.use_client(open_client)
+                reader.wow_dir = open_client
+                was_running = False
+            running = open_client is not None
             reader.running_game = running
             next_game_check = now + settings.GAME_CHECK_SECONDS
             if running != was_running:
@@ -49,7 +64,8 @@ def run(bridge, *, always: bool = False) -> None:
                 if not running:
                     publishing.go_quiet(bridge)
         if not running and now >= next_version_check:
-            addonfiles.keep_addon_current(bridge.wow_dir)  # The launcher patches while the game is closed.
+            for client in bridge.clients():
+                addonfiles.keep_addon_current(client)  # The launcher patches while the game is closed.
             next_version_check = now + settings.VERSION_CHECK_SECONDS
         try:
             while not replies.empty():

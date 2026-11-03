@@ -144,6 +144,12 @@ class Previews:
                     self.ready[key] = {"error": "T3 could not send this picture."}
         return True
 
+    def use_folder(self, folder: Path) -> None:
+        """Another client from now on, whose game is starting a session of its own."""
+        with self.files_lock:
+            self.folder = folder
+        self.clear_files()
+
     def clear_files(self, new_session: bool = True) -> None:
         """Blank every picture and drop work under way. While the game is still open, new_session=False
         keeps moving through the files, because it has cached the old ones until the next reload."""

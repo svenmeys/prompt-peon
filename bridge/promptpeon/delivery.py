@@ -9,11 +9,12 @@ from pathlib import Path
 from . import commands, console, gates, publishing, refreshing, safefiles, savedvars, settings, t3errors
 
 
-def clear_saved_words(bridge) -> None:
+def clear_saved_words(bridge, wow_dir: Path | None = None, *, force: bool = False) -> None:
     """Run while the game is closed. Nothing you typed stays in its folder, once any last message has gone.
-    T3 being away gets it a fair wait, not forever: then it's cleared, and the next session says it was lost."""
-    waited = bridge.closed_at is not None and time.monotonic() - bridge.closed_at >= settings.LAST_SEND_SECONDS
-    for path in (bridge.wow_dir / "WTF/Account").glob(f"*/SavedVariables/{settings.ADDON}.lua*"):
+    T3 being away gets it a fair wait, not forever: then it's cleared, and the next session says it was lost.
+    `force` skips the wait, for a client you've moved away from."""
+    waited = force or bridge.closed_at is not None and time.monotonic() - bridge.closed_at >= settings.LAST_SEND_SECONDS
+    for path in ((wow_dir or bridge.wow_dir) / "WTF/Account").glob(f"*/SavedVariables/{settings.ADDON}.lua*"):
         try:
             mtime = path.stat().st_mtime
             main = path.name == f"{settings.ADDON}.lua"

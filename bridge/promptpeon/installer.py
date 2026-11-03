@@ -64,23 +64,28 @@ def install(args) -> None:
     print(f"Prompt Peon {settings.VERSION} setup\n")
     print("Free software with no warranty, so use it at your own risk. It sends real instructions to real")
     print("agents on your T3 machine. It isn't made or endorsed by Blizzard or by T3.\n")
-    wow_dir = wowfolder.find_wow_dir(args.wow_dir, args.client)
-    print(f"Found {settings.CLIENT_NAMES[wow_dir.name]}: {wow_dir}")
-    prompts.wait_for_game_to_close(wow_dir)
+    wow_dirs = wowfolder.find_wow_dirs(args.wow_dir, args.client)
+    for wow_dir in wow_dirs:
+        print(f"Found {settings.CLIENT_NAMES[wow_dir.name]}: {wow_dir}")
+        prompts.wait_for_game_to_close(wow_dir)
     url = pairing.connect_to_t3(args.url, args.link, args.pictures, args.allow_unencrypted)
-    prompts.ask_about_other_addons(wow_dir)
+    prompts.ask_about_other_addons(*wow_dirs)
     full_access = prompts.wants_full_access(args.full_access)
     if settings.IS_WINDOWS and not processes.stop_running_bridge():
         sys.exit("The companion app is still running, so nothing changed. Close pythonw.exe in Task Manager and run this again.")
     script, addon_source = settle_in(settings.PROGRAM_DIR / settings.ENTRY_POINT, Path(args.addon_source))
-    count = addonfiles.place_addon(wow_dir, addon_source)
-    known_dirs = list(dict.fromkeys([*(userconfig.read_config().get("wow_dirs") or []), userconfig.read_config().get("wow_dir"), str(wow_dir)]))
+    counts = [addonfiles.place_addon(wow_dir, addon_source) for wow_dir in wow_dirs]
+    chosen = [str(wow_dir) for wow_dir in wow_dirs]
+    saved = userconfig.read_config()
+    known_dirs = list(dict.fromkeys([*(saved.get("wow_dirs") or []), saved.get("wow_dir"), *chosen]))
     known_dirs = [folder for folder in known_dirs if folder]
     for folder in known_dirs:
-        if folder != str(wow_dir):
+        if folder not in chosen:
             addonfiles.clear_game_folder(Path(folder))
-    safefiles.write_atomic(settings.CONFIG_DIR / "config.json", json.dumps(dict(userconfig.read_config(), url=url, wow_dir=str(wow_dir), wow_dirs=known_dirs, full_access=full_access), indent=2))
-    print(f"Installed the addon and {count} helper entries.")
+    # The app starts here and follows whichever game opens, so this is only where it begins.
+    wow_dir = saved.get("wow_dir") if saved.get("wow_dir") in chosen else chosen[0]
+    safefiles.write_atomic(settings.CONFIG_DIR / "config.json", json.dumps(dict(userconfig.read_config(), url=url, wow_dir=wow_dir, wow_dirs=known_dirs, full_access=full_access), indent=2))
+    print(f"Installed the addon and {counts[0]} helper entries" + (f" in all {len(counts)} clients." if len(counts) > 1 else "."))
     if args.no_start:
         pass
     elif settings.IS_WINDOWS:

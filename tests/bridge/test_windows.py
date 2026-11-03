@@ -56,13 +56,12 @@ class WindowsPaths(Base):
 
     def test_finds_client_in_given_roots(self):
         root = self._root(("_classic_era_", "WowClassic.exe"))
-        self.assertEqual(wowfolder.find_wow_dir(None, roots=[self.dir / "nope", root]), root / "_classic_era_")
+        self.assertEqual(wowfolder.find_wow_dirs(None, roots=[self.dir / "nope", root]), [root / "_classic_era_"])
 
-    def test_two_clients_means_choose(self):
+    def test_two_clients_means_both_unless_you_choose(self):
         root = self._root(("_classic_era_", "WowClassic.exe"), ("_forever_", "Wow.exe"))
-        with self.assertRaises(SystemExit):
-            wowfolder.find_wow_dir(None, roots=[root])
-        self.assertEqual(wowfolder.find_wow_dir(None, "forever", roots=[root]), root / "_forever_")
+        self.assertEqual(len(wowfolder.find_wow_dirs(None, roots=[root])), 2)
+        self.assertEqual(wowfolder.find_wow_dirs(None, "forever", roots=[root]), [root / "_forever_"])
 
     def test_registry_path_points_at_the_root(self):
         roots = wowfolder.windows_wow_roots(["D:/Games/WoW/_retail_/", "E:/Other WoW"], drives="C")
