@@ -86,7 +86,7 @@ Early. So far one person has used it.
 | --- | --- |
 | Classic Era 1.15.9 on a Steam Machine (Proton, Desktop Mode), T3 on another machine | Works, tested in the real game |
 | Retail 12.1.5 on a Steam Machine | Runs in the real game: the log, live updates, party frames and tracker. Sending from the game isn't tested there yet |
-| WoW Forever 1.60.1 | Installs and shows in the character screen's addon list, but not yet run in the game, because its servers aren't open |
+| WoW Forever 1.60.1 | Works in the real game, after a first try. Not every feature has been checked there yet |
 | Windows | Installed and used by the author. A full check is still to come |
 | Reaching T3 on another machine | An SSH tunnel is in daily use. T3 Connect is tested from a Mac, and a full run from Windows is still to come. Tailscale hasn't run through the installer |
 | Steam Machine Gaming Mode | Not tested |
