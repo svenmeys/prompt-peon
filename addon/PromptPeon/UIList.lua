@@ -174,7 +174,8 @@ function UI:RenderList(threads)
   end
   local snoozed, settled = {}, {}
   for _, thread in ipairs(ns.snapshot and ns.snapshot.pk or {}) do
-    if ns:IsHidden(thread) then
+    if thread.pk == "l" then -- Only here so a link can open it. It isn't on your list.
+    elseif ns:IsHidden(thread) then
       hidden[#hidden + 1] = thread
     elseif thread.pk == "z" then
       snoozed[#snoozed + 1] = thread

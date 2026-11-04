@@ -1,7 +1,9 @@
 """Building the one snapshot the game loads, within what the game can load, and rendering it as Lua."""
 from __future__ import annotations
 
+import re
 import time
+import urllib.parse
 
 from . import gametext, luadata, settings, threadstate
 
@@ -116,6 +118,49 @@ def build_snapshot(shell: dict | None, messages: dict, *, url: str, error: str, 
         parked.append(row)
     snapshot["pk"] = parked
     return snapshot
+
+
+# As T3's own threadLinks.ts has it: <t3-thread://v2/ENVIRONMENT/ID>, [label](t3-thread://...) or v1 with
+# no environment. The ID can be percent-escaped. Links in code get collected too: only harmless extra rows.
+THREAD_LINK_RE = re.compile(r"t3-thread://(?:v2/[^/\s]+|v1)/([^\s<>)]+)")
+
+
+def add_linked_threads(snapshot: dict, shell: dict | None, loaded: dict, hidden: dict | None = None) -> None:
+    """Most links point at delegated threads, which the list leaves out. A link has to open them, so
+    they ride along in `pk` as "l": a title and a status, with their words loaded when you open one."""
+    if shell is None:
+        return  # What the last snapshot had stays until T3 is back.
+    by_id = {thread["id"]: thread for thread in shell.get("threads", []) if not thread.get("archivedAt") and not thread.get("deletedAt")}
+    projects = {project.get("id"): project.get("title") for project in shell.get("projects", [])}
+    have = {row["id"] for field in ("threads", "pk") for row in snapshot[field]}
+    bodies = [row.get("m") for row in snapshot["threads"] + snapshot["pk"]]
+    bodies += [extra.get(field) for extra in loaded.values() for field in ("vm", "ob")]
+    added = 0
+    for rows in bodies:
+        for message in rows or []:
+            if len(message) < 2 or not isinstance(message[1], str) or "t3-thread://" not in message[1]:
+                continue
+            for written in THREAD_LINK_RE.findall(message[1]):
+                thread = by_id.get(written) or by_id.get(urllib.parse.unquote(written))
+                if not thread or thread["id"] in have or added >= settings.MAX_LINKED_THREADS:
+                    continue
+                row = {
+                    "id": thread["id"],
+                    "p": gametext.readable(projects.get(thread.get("projectId")) or "No project", 60),
+                    "t": gametext.readable(thread.get("title") or "Untitled", 120),
+                    "s": threadstate.status_of(thread),
+                    "u": threadstate.to_epoch(thread.get("updatedAt")),
+                    "pk": "l",
+                }
+                if threadstate.is_hidden(hidden, thread["id"], row["p"]):
+                    row["hd"] = True
+                else:
+                    row["b"] = gametext.readable(thread.get("branch") or "", 60)
+                    row["mo"] = gametext.readable((thread.get("modelSelection") or {}).get("model") or "", 40)
+                    row["cd"] = True
+                snapshot["pk"].append(row)
+                have.add(thread["id"])
+                added += 1
 
 
 def withhold_words(snapshot: dict, reason: str) -> None:

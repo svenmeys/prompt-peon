@@ -29,6 +29,7 @@ local function makeFrame(kind)
   frame.GetTop = function() return 1000 end
   frame.SetTexture = function(self, texture) self.texture = texture end
   frame.EnableMouse = function(self, on) self.mouseEnabled = on end
+  frame.SetHyperlinksEnabled = function(self, on) self.hyperlinks = on end
   frame.SetPoint = function(self, ...) self.lastPoint = { ... } end
   frame.SetChecked = function(self, on) self.checked = on end
   frame.GetChecked = function(self) return self.checked end

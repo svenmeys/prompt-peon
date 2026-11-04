@@ -31,7 +31,7 @@ for name in sorted(templates | fonts):
 docs = "\n".join(p.read_text(errors="ignore") for p in (UI / "Blizzard_APIDocumentationGenerated").glob("*.lua"))
 for name, where in [("LoadAddOn", docs), ("NewTicker", lua), ("ReloadUI", lua), ("UISpecialFrames", lua),
                     ("UIErrorsFrame", lua + xml), ("IG_QUEST_LOG_OPEN", lua), ("SetResizeBounds", lua + docs),
-                    ("InCombatLockdown", lua + docs), ("IsShiftKeyDown", lua + docs), ("SetMaxLines", lua + docs),
+                    ("InCombatLockdown", lua + docs), ("SetHyperlinksEnabled", lua + docs), ("IsShiftKeyDown", lua + docs), ("SetMaxLines", lua + docs),
                     ("SaveAddOns", docs), ("EnableAddOn", docs), ("DisableAddOn", docs), ("DoesAddOnExist", docs),
                     ("scrollBarHideable", lua), ("ScrollFrame_OnScrollRangeChanged", lua), ("LinkTypes.AddOn", lua),
                     ('TriggerEvent("SetItemRef"', lua), ("SetObeyStepOnDrag", lua + docs),

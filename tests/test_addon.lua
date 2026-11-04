@@ -4253,5 +4253,40 @@ if arg and arg[1] then
   check("utf-8 survives", row.m[4][2] == "Sven zegt: één café", row.m[4][2])
 end
 
+-- Links to threads: T3's own format, drawn as the thread's name and opened by a click.
+do
+  local function lastPending() return PromptPeonDB.pending[#PromptPeonDB.pending] end
+  local CHILD = "thread:delegated-task:command:mcp:abc"
+  local HREF = "t3-thread://v2/env-1/thread:delegated-task:command%3Amcp%3Aabc"
+  PROMPTPEON_SNAPSHOT = snapshot({ pk = { { id = CHILD, p = "Shop", t = "Fix |cffthe login", s = "running", u = time(), pk = "l" } } })
+  ns:Ingest()
+  local inline = ns.Markdown.Inline
+  local link = "|cff70b7ff|Haddon:peon:" .. CHILD .. "|h"
+  check("bare link shows the title and is clickable", inline("In <" .. HREF .. ">.") == "In " .. link .. "Fix ||cffthe login|h|r.", inline("In <" .. HREF .. ">."))
+  check("the agent's label wins", inline("[review](<" .. HREF .. ">)") == link .. "review|h|r", inline("[review](<" .. HREF .. ">)"))
+  check("no angle brackets works too", inline("[review](" .. HREF .. ")") == link .. "review|h|r")
+  check("an empty label falls back to the title", inline("[](<" .. HREF .. ">)"):find("Fix ||cffthe login", 1, true))
+  check("code in a label is kept", inline("[`P1`](<" .. HREF .. ">)"):find("|h|cff9fd3c7P1|r|h", 1, true), inline("[`P1`](<" .. HREF .. ">)"))
+  check("bold can't reach inside", inline("**<" .. HREF .. ">**"):find(link, 1, true))
+  check("a link in code stays code", inline("`<" .. HREF .. ">`") == "|cff9fd3c7<" .. HREF .. ">|r", inline("`<" .. HREF .. ">`"))
+  check("an unknown thread is words, not a dead click", inline("<t3-thread://v2/env-1/gone>") == "a thread", inline("<t3-thread://v2/env-1/gone>"))
+  check("an unknown label stays too", inline("[review](<t3-thread://v2/e/gone>)") == "review")
+  check("v1 links work", inline("<t3-thread://v1/" .. OTHER .. ">"):find("Quiet one", 1, true))
+  check("a hostile id can't open a link", not inline("<t3-thread://v2/e/x|h|Hitem:1>"):find("|Hitem", 1, true))
+  check("the tracker gets plain words", ns.Markdown.Plain("In <" .. HREF .. "> and [it](<" .. HREF .. ">).") == "In Fix |cffthe login and it.", ns.Markdown.Plain("In <" .. HREF .. "> and [it](<" .. HREF .. ">)."))
+
+  ns.UI.detailContent.scripts.OnHyperlinkClick(ns.UI.detailContent, "addon:peon:" .. CHILD, "x", "LeftButton")
+  check("clicking opens the linked thread", PromptPeonDB.selected == CHILD, PromptPeonDB.selected)
+  check("hyperlinks are on", ns.UI.detailContent.hyperlinks == true)
+  ns.UI:Render()
+  check("and its words are asked for", lastPending().command == "view" and lastPending().thread == CHILD, lastPending().command)
+  check("it isn't called settled", not ns.UI.meta.text:find("Settled", 1, true), ns.UI.meta.text)
+  check("there's nothing to reopen", not ns.UI.primary:IsShown())
+  drainSend()
+  local before = PromptPeonDB.selected
+  ns.UI.detailContent.scripts.OnHyperlinkClick(ns.UI.detailContent, "addon:peon:gone", "x", "LeftButton")
+  check("a stale click does nothing", PromptPeonDB.selected == before)
+end
+
 print(string.format("%d checks, %d failed", checks, failures))
 os.exit(failures == 0 and 0 or 1)

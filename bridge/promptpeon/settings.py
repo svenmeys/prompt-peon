@@ -36,6 +36,7 @@ UPDATE_CHECK_SECONDS = 30 * 60  # How often the app asks whether a newer release
 MAX_UPDATE_BYTES = 30 * 1024 * 1024  # Unpacked. The real thing is under 1 MB.
 UPDATE_PARTS = {"addon", "bridge", "install.cmd", "uninstall.cmd", "start-stop.cmd", "install.sh", "uninstall.sh", "start-stop.sh"}  # What the installer uses. An older installer only unpacks what its own list names, so a new file here reaches an install one update later.
 MAX_THREADS = 30
+MAX_LINKED_THREADS = 30  # Threads the messages link to, beyond the ones already in the game.
 THREADS_WITH_MESSAGES = 30
 # Keep messages whole. Measured on real threads: the last 30 messages of every open thread
 # come to about 110 KB, and Lua loads 2 MB of snapshot in about 6 ms.

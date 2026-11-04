@@ -138,7 +138,8 @@ function UI:RenderControls(thread)
   self:RenderTopIcons()
   local onPage = self.newThread or self.showOptions or self.showAchievements or (self.showReport and ns.Game and ns.Game.report)
   local open = thread and not onPage
-  self.primary:SetShown(open or false)
+  -- A thread you followed a link to isn't on your list, so there's nothing to turn in or reopen.
+  self.primary:SetShown((open and thread.pk ~= "l") or false)
   self.secondary:SetShown((open and not thread.pk) or false)
   self.hideButton:SetShown(open or false)
   self.snoozeButton:SetShown((open and not thread.pk and thread.s ~= "needs") or false)

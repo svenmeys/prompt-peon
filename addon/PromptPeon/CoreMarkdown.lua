@@ -9,6 +9,25 @@ ns.Markdown = Markdown
 
 local INLINE_CODE, INLINE_BOLD, INLINE_LINK, INLINE_ITALIC = "|cff9fd3c7", "|cffffffff", "|cff70b7ff", "|cffd0ccc0"
 
+-- T3 writes a link to a thread as <t3-thread://v2/ENVIRONMENT/ID> or [label](t3-thread://...), with
+-- the ID sometimes percent-escaped. These find them; each hands over everything after the version.
+local THREAD_LINK_LABELED = "%[([^%]\n]*)%]%(<?t3%-thread://v[12]/([^%s%)>]+)>?%)"
+local THREAD_LINK_BARE = "<t3%-thread://v[12]/([^%s<>]+)>"
+
+local function linkedThread(path)
+  local id = path:match("^[^/]+/(.+)$") or path -- v1 links have no environment in front.
+  local thread = ns:ThreadById(id)
+  if thread then return thread end
+  local decoded = id:gsub("%%(%x%x)", function(hex) return string.char(tonumber(hex, 16)) end)
+  return ns:ThreadById(decoded)
+end
+
+--- What a link says: what the agent called it, or else the thread's title.
+local function threadLinkWords(label, thread)
+  if label and label:match("%S") then return label end
+  return thread and thread.t or "a thread"
+end
+
 --- One line of text, ready to draw. Pipes are doubled first, so nothing from a thread can
 --- become a WoW escape. Only the codes added here can.
 function Markdown.Inline(text)
@@ -18,6 +37,20 @@ function Markdown.Inline(text)
     held[#held + 1] = INLINE_CODE .. code .. "|r"
     return "\1" .. #held .. "\1"
   end)
+  -- Held like code, so the marks below can't reach inside. A thread the game doesn't have stays words.
+  local function threadLink(label, path)
+    local thread = linkedThread(path)
+    -- A label can hold code that was just held, and the swap back at the end only goes one level deep.
+    local words = (label and label:match("%S") and label or ns.Plain(threadLinkWords(nil, thread)))
+      :gsub("\1(%d+)\1", function(number) return held[tonumber(number)] end)
+    if thread and thread.id:match("^[%w:%-_%.~]+$") then
+      words = INLINE_LINK .. "|Haddon:peon:" .. thread.id .. "|h" .. words .. "|h|r"
+    end
+    held[#held + 1] = words
+    return "\1" .. #held .. "\1"
+  end
+  out = out:gsub(THREAD_LINK_LABELED, threadLink)
+  out = out:gsub(THREAD_LINK_BARE, function(path) return threadLink(nil, path) end)
   out = out:gsub("%[([^%]\n]+)%]%([^%)\n]+%)", INLINE_LINK .. "%1|r")
   out = out:gsub("%*%*(.-)%*%*", INLINE_BOLD .. "%1|r")
   out = out:gsub("%*([^%s%*][^%*\n]-)%*", INLINE_ITALIC .. "%1|r")
@@ -133,6 +166,8 @@ function Markdown.Plain(text)
     end
   end
   local joined = table.concat(out, "\n")
+  joined = joined:gsub(THREAD_LINK_LABELED, function(label, path) return threadLinkWords(label, linkedThread(path)) end)
+  joined = joined:gsub(THREAD_LINK_BARE, function(path) return threadLinkWords(nil, linkedThread(path)) end)
   joined = joined:gsub("%*%*(.-)%*%*", "%1"):gsub("`([^`\n]+)`", "%1"):gsub("%[([^%]\n]+)%]%([^%)\n]+%)", "%1")
   return joined
 end

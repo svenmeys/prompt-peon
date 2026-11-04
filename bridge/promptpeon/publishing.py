@@ -42,6 +42,7 @@ def publish(bridge) -> None:
     snapshot["rc"] = bridge.state.get("sums") or {}
     if bridge.state.get("cleared"):
         snapshot["clr"] = bridge.state["cleared"]
+    snapshots.add_linked_threads(snapshot, bridge.shell, bridge.loaded, bridge.state["hidden"])
     by_id = {thread["id"]: thread for thread in (bridge.shell or {}).get("threads", [])}
     for row in snapshot["threads"]:
         if row.get("hd"):

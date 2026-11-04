@@ -70,7 +70,7 @@ function UI:RenderDetail(thread)
   local meta = colored(info, info.label) .. "  |cff888888" .. ns.Plain(thread.p)
   if thread.pk == "z" then
     meta = "|cff9fb8d6Snoozed until " .. UI.WakeWords(thread.zu) .. "|r  |cff888888" .. ns.Plain(thread.p)
-  elseif thread.pk then
+  elseif thread.pk and thread.pk ~= "l" then
     meta = "|cff888888Settled  " .. ns.Plain(thread.p)
   end
   if thread.b and thread.b ~= "" then meta = meta .. " / " .. ns.Plain(thread.b) end

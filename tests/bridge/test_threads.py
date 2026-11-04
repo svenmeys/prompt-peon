@@ -167,6 +167,58 @@ def in_a_while(seconds=3600):
     return time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime(time.time() + seconds))
 
 
+class LinkedThreads(unittest.TestCase):
+    CHILD = "thread:delegated-task:command:mcp:abc"
+
+    def build(self, text, *threads, loaded=None, hidden=None, messages=None):
+        shell = {"threads": [thread(id="main"), *threads], "projects": [{"id": "p1", "title": "Shop"}]}
+        messages = {"main": {"rows": [["a", text, "d", 1]]}} if messages is None else messages
+        snapshot = snapshots.build_snapshot(shell, messages, url="u", error="", error_since=0, ack=0, results={}, hidden=hidden)
+        snapshots.add_linked_threads(snapshot, shell, loaded or {}, hidden)
+        return snapshot
+
+    def child(self, **extra):
+        return thread(id=self.CHILD, title="Fix login", lineage={"parentThreadId": "main"}, **extra)
+
+    def test_a_delegated_thread_a_message_links_to_comes_along(self):
+        for written in ("<t3-thread://v2/env/thread:delegated-task:command%3Amcp%3Aabc>",
+                        "[review](<t3-thread://v2/env/thread:delegated-task:command%3Amcp%3Aabc>)",
+                        "[review](t3-thread://v1/thread:delegated-task:command:mcp:abc)"):
+            snapshot = self.build(f"Running in {written}.", self.child())
+            self.assertEqual([(row["id"], row["t"], row["pk"]) for row in snapshot["pk"]], [(self.CHILD, "Fix login", "l")], written)
+            self.assertNotIn("m", snapshot["pk"][0], "its words only come when you open it")
+        self.assertEqual([row["id"] for row in snapshot["threads"]], ["main"], "and it stays off the list")
+
+    def test_no_link_no_row(self):
+        self.assertEqual(self.build("no links here", self.child())["pk"], [])
+
+    def test_a_thread_already_in_the_game_is_not_added_twice(self):
+        self.assertEqual(self.build("see <t3-thread://v2/env/main>")["pk"], [])
+
+    def test_a_deleted_or_unknown_thread_is_left_out(self):
+        snapshot = self.build("<t3-thread://v2/env/gone> <t3-thread://v2/env/" + self.CHILD + ">", self.child(deletedAt="2026"))
+        self.assertEqual(snapshot["pk"], [])
+
+    def test_a_hidden_thread_gives_only_its_name(self):
+        snapshot = self.build("<t3-thread://v2/env/" + self.CHILD + ">", self.child(), hidden={"threads": [self.CHILD], "projects": []})
+        self.assertTrue(snapshot["pk"][0]["hd"])
+        self.assertNotIn("cd", snapshot["pk"][0])
+
+    def test_links_inside_a_thread_you_opened_work_too(self):
+        loaded = {"x": {"vm": [["a", "<t3-thread://v2/env/" + self.CHILD + ">", "d", 1]], "until": 0}}
+        self.assertEqual([row["id"] for row in self.build("nothing", self.child(), loaded=loaded)["pk"]], [self.CHILD])
+
+    def test_there_is_a_limit(self):
+        many = [thread(id=f"c{n}", lineage={"parentThreadId": "main"}) for n in range(settings.MAX_LINKED_THREADS + 5)]
+        text = " ".join(f"<t3-thread://v2/env/c{n}>" for n in range(settings.MAX_LINKED_THREADS + 5))
+        self.assertEqual(len(self.build(text, *many)["pk"]), settings.MAX_LINKED_THREADS)
+
+    def test_t3_being_down_changes_nothing(self):
+        snapshot = {"threads": [], "pk": [{"id": "kept", "pk": "l"}]}
+        snapshots.add_linked_threads(snapshot, None, {})
+        self.assertEqual(snapshot["pk"], [{"id": "kept", "pk": "l"}])
+
+
 class ParkedThreads(unittest.TestCase):
     def build(self, *threads, **extra):
         shell = {"threads": list(threads), "projects": [{"id": "p1", "title": "Shop"}]}

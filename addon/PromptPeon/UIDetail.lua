@@ -103,6 +103,9 @@ function UI:BuildDetail(frame)
   local content = CreateFrame("Frame", nil, scroll)
   content:SetSize(10, 10)
   scroll:SetScrollChild(content)
+  -- The text blocks live on this frame, so it answers for links inside them. Same way Blizzard's quest text does.
+  content:SetHyperlinksEnabled(true)
+  content:SetScript("OnHyperlinkClick", function(_, link, _, button) ns.Chat:OnLink(link, button) end)
   hideScrollBarWhenIdle(scroll)
   self.detailScroll, self.detailContent = scroll, content
   self.lines = {}

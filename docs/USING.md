@@ -15,7 +15,7 @@ Everything the [README](../README.md) keeps short: what each part does, how refr
 | Sleep icon and a time | Snoozed until then |
 | Spyglass | On your tracker |
 
-**The whole thread.** Messages in full, tool steps, todo lists, open questions and pictures an agent looked at. Thinking stays folded until you click it. "Show older messages" fetches the rest when you ask.
+**The whole thread.** Messages in full, tool steps, todo lists, open questions and pictures an agent looked at. Thinking stays folded until you click it. "Show older messages" fetches the rest when you ask. A link to another thread shows that thread's name, and clicking it opens the thread here, delegated ones too.
 
 **Real controls.** The open thread has a row of small icons with a tooltip on each. Model and effort sit beside the reply box.
 
