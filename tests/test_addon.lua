@@ -110,6 +110,14 @@ check("transmit started", ns.tx ~= nil)
 local savesBefore = #stub.saves
 drainSend()
 check("every frame saved to disk", #stub.saves - savesBefore >= 3, #stub.saves - savesBefore)
+do
+  -- Saving isn't enough. A game that ignores the flag change saves nothing new and says nothing.
+  local flipped = 0
+  for index = savesBefore + 1, #stub.saves do
+    if #stub.saves[index] > 0 then flipped = flipped + 1 end
+  end
+  check("the frames really change the send flags", flipped >= 1, flipped)
+end
 check("carriers clear when done", #stub.saves[#stub.saves] == 0)
 ns:StartNextSend()
 check("no resend while waiting for the answer", ns.tx == nil and PromptPeonDB.pending[1].tries == 1)
@@ -133,31 +141,6 @@ local refused, why = ns:QueueReply("has|pipe", "x")
 check("a thread we can't reach is refused and explained", refused == nil and why:find("Open it in T3", 1, true), why)
 check("oversized reply refused", ns:QueueReply(THREAD, string.rep("x", 4001)) == nil)
 
--- A slow call to T3 holds the bridge up past all three tries. It did answer, so nobody hears otherwise.
-stub.timers = {}
-do
-  -- Later checks here name their sequence numbers, so this one gives its number back.
-  local seqWas, resultWas = PromptPeonDB.nextSeq, PromptPeonDB.results[THREAD]
-  ns:QueueReply(THREAD, "slow but fine")
-  ns:Deliver()
-  local entry = PromptPeonDB.pending[1]
-  for _ = 1, 3 do
-    drainSend()
-    stub.slotData = nil
-    stub.now = stub.now + 100
-    stub.runTimers()
-    stub.now = stub.now + 100
-    stub.runTimers()
-  end
-  local chatBefore = #stub.chat
-  stub.now = stub.now + 100
-  stub.slotData = snapshot({ ack = entry.seq, res = { [tostring(entry.seq)] = "sent" } })
-  stub.runTimers()
-  check("a late answer clears it", #PromptPeonDB.pending == 0, #PromptPeonDB.pending)
-  check("without ever saying it isn't answering", not entry.stuck and #stub.chat == chatBefore, stub.chat[#stub.chat])
-  PromptPeonDB.nextSeq, PromptPeonDB.results[THREAD] = seqWas, resultWas
-end
-
 -- Nobody answers: resend, then stop and say so. Nothing is lost.
 stub.timers = {}
 ns:QueueReply(THREAD, "into the void")
@@ -172,10 +155,6 @@ for _ = 1, 3 do
   stub.runTimers() -- Second check, then resend or give up.
 end
 check("tried three times", stuckEntry.tries == 3, stuckEntry.tries)
-check("three tries are 12 seconds, which a busy companion app can take, so not yet", not stuckEntry.stuck and stuckEntry.waiting and not PromptPeonDB.results[THREAD], stuckEntry.stuck)
-check("and chat stays quiet", not stub.chat[#stub.chat] or not stub.chat[#stub.chat]:find("not answering", 1, true), stub.chat[#stub.chat])
-stub.now = stub.now + 100
-stub.runTimers() -- The last look, and still nobody.
 check("stuck is flagged", stuckEntry.stuck == true)
 check("stuck offers a reload", ns:NeedsReload() and ns.UI.reload.shown)
 check("stuck says what to do", ns.UI.notice.text:find("Reload UI", 1, true), ns.UI.notice.text)
@@ -3256,25 +3235,25 @@ do local function parkedAndMarks()
   ns.Markdown.Blocks(table.concat(manyLines, "\n"))
   check("32,000 indented lines parse quickly", os.clock() - started < 1, os.clock() - started)
 
-  -- WoW Forever's docs say UnitName can be secret, and addon code can't pass a secret on.
+  -- WoW Forever's docs say UnitGUID can be secret, and addon code can't pass a secret on.
   do
-    local realName, realSecret = UnitName, _G.issecretvalue
-    ns.playerName = nil
-    UnitName = function() return "Hero" end
+    local realGuid, realSecret = UnitGUID, _G.issecretvalue
+    ns.characterKey = nil
+    UnitGUID = function() return "Player-1-HERO" end
     _G.issecretvalue = function(value) return value == "SECRET" end
-    check("the name is kept at login", ns:PlayerName() == "Hero", ns:PlayerName())
-    UnitName = function() return "SECRET" end
-    check("a secret name never gets used", ns:PlayerName() == "Hero", ns:PlayerName())
-    ns.playerName = nil
-    check("with none kept, there's no name", ns:PlayerName() == nil)
+    check("the GUID is kept at login", ns:CharacterKey() == "Player-1-HERO", ns:CharacterKey())
+    UnitGUID = function() return "SECRET" end
+    check("a secret GUID never gets used", ns:CharacterKey() == "Player-1-HERO", ns:CharacterKey())
+    ns.characterKey = nil
+    check("with none kept, there's no GUID", ns:CharacterKey() == nil)
     local saves = 0
     local realSave = C_AddOns.SaveAddOns
     C_AddOns.SaveAddOns = function() saves = saves + 1 end
     ns:WriteFrame(nil)
     check("and nothing gets written", saves == 0, saves)
     C_AddOns.SaveAddOns = realSave
-    UnitName, _G.issecretvalue = realName, realSecret
-    ns.playerName = nil
+    UnitGUID, _G.issecretvalue = realGuid, realSecret
+    ns.characterKey = nil
   end
 
   -- A second WoW account on this install can land on a number the first one used.

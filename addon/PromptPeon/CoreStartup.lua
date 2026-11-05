@@ -39,7 +39,7 @@ events:SetScript("OnEvent", function(_, event, name)
     ns:Ingest()
     ns:WriteOutbox()
   elseif event == "PLAYER_LOGIN" then
-    ns:PlayerName()
+    ns:CharacterKey()
     if ns:CanSendSilently() then ns:WriteFrame(nil) end -- Clear anything a crash left set.
     if ns.UI then ns.UI:Build() end
     C_Timer.NewTicker(5, function() ns:Tick() end)

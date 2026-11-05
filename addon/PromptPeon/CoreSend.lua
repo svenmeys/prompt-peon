@@ -11,17 +11,18 @@ function ns:CanSendSilently()
     and C_AddOns.DoesAddOnExist(string.format("%sOut%02d", addonName, self.OUT_COUNT))
 end
 
---- Whose addon list the send flags are saved under. WoW Forever's API docs say UnitName can be secret
---- when names are restricted, and addon code can't pass a secret on. So keep the one from login.
-function ns:PlayerName()
-  local name = UnitName("player")
-  if not (issecretvalue and issecretvalue(name)) then self.playerName = name end
-  return self.playerName
+--- Whose addon list the send flags are saved under. The game's own addon list goes by GUID. WoW Forever
+--- quietly ignores a name here, so nothing changes and nothing reaches the disk. Its API docs say the GUID
+--- can be secret when identities are restricted, and addon code can't pass a secret on. So keep the one from login.
+function ns:CharacterKey()
+  local guid = UnitGUID("player")
+  if not (issecretvalue and issecretvalue(guid)) then self.characterKey = guid end
+  return self.characterKey
 end
 
 --- Put one frame on disk. Nil clears every bit.
 function ns:WriteFrame(frame)
-  local me = self:PlayerName()
+  local me = self:CharacterKey()
   if not me then return end -- The send times out and goes the slow way, through a reload.
   for index = 1, self.OUT_COUNT do
     local byte = frame and frame:byte(math.floor((index - 1) / 8) + 1) or 0
@@ -228,10 +229,6 @@ function ns:CheckDelivered(entry, attempt)
     elseif (entry.tries or 0) < self.MAX_TRIES then
       entry.waiting = nil
       self:StartNextSend()
-    elseif attempt == 2 then
-      -- That was about 12 seconds, and a slow call to T3 holds the bridge up for longer than that.
-      -- Only call it not answering once it has been quiet long enough to have really stopped.
-      C_Timer.After(self.BRIDGE_QUIET_AFTER, function() ns:CheckDelivered(entry, 3) end)
     else
       entry.waiting = nil
       entry.stuck = true

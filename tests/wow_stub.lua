@@ -1,7 +1,7 @@
 -- A stand-in for the WoW client: enough API for the addon to run under luajit.
 -- It proves logic, not drawing. Only the real client can prove drawing.
 local M = { loaded = {}, slotData = nil, inCombat = false, reloads = 0, sounds = 0, errors = {}, chat = {},
-  now = 1000, timers = {}, carriers = {}, saves = {}, carriersExist = true }
+  now = 1000, timers = {}, carriers = {}, saves = {}, carriersExist = true, guid = "Player-93-0ABCDEF0" }
 
 local function newObject(kind)
   local object = { kind = kind, shown = true, scripts = {}, text = "", width = 300, height = 100, alpha = 1, value = 0 }
@@ -132,6 +132,7 @@ function M.install()
   InCombatLockdown = function() return M.inCombat end
   IsShiftKeyDown = function() return M.shift end
   UnitName = function() return "Tester" end
+  UnitGUID = function() return M.guid end
   UnitFactionGroup = function() return M.faction or "Horde" end
   UnitRace = function() return "Orc", M.race or "Orc" end
   GetTime = function() return M.now end
@@ -157,8 +158,9 @@ function M.install()
       return true
     end,
     DoesAddOnExist = function(name) return M.carriersExist or not name:find("Out", 1, true) end,
-    DisableAddOn = function(name) M.carriers[name] = true end,
-    EnableAddOn = function(name) M.carriers[name] = false end,
+    -- As WoW Forever does it: the character is its GUID, and anything else changes nothing and says nothing.
+    DisableAddOn = function(name, character) if character == M.guid then M.carriers[name] = true end end,
+    EnableAddOn = function(name, character) if character == M.guid then M.carriers[name] = false end end,
     SaveAddOns = function()
       local set = {}
       for index = 1, 96 do
