@@ -133,6 +133,31 @@ local refused, why = ns:QueueReply("has|pipe", "x")
 check("a thread we can't reach is refused and explained", refused == nil and why:find("Open it in T3", 1, true), why)
 check("oversized reply refused", ns:QueueReply(THREAD, string.rep("x", 4001)) == nil)
 
+-- A slow call to T3 holds the bridge up past all three tries. It did answer, so nobody hears otherwise.
+stub.timers = {}
+do
+  -- Later checks here name their sequence numbers, so this one gives its number back.
+  local seqWas, resultWas = PromptPeonDB.nextSeq, PromptPeonDB.results[THREAD]
+  ns:QueueReply(THREAD, "slow but fine")
+  ns:Deliver()
+  local entry = PromptPeonDB.pending[1]
+  for _ = 1, 3 do
+    drainSend()
+    stub.slotData = nil
+    stub.now = stub.now + 100
+    stub.runTimers()
+    stub.now = stub.now + 100
+    stub.runTimers()
+  end
+  local chatBefore = #stub.chat
+  stub.now = stub.now + 100
+  stub.slotData = snapshot({ ack = entry.seq, res = { [tostring(entry.seq)] = "sent" } })
+  stub.runTimers()
+  check("a late answer clears it", #PromptPeonDB.pending == 0, #PromptPeonDB.pending)
+  check("without ever saying it isn't answering", not entry.stuck and #stub.chat == chatBefore, stub.chat[#stub.chat])
+  PromptPeonDB.nextSeq, PromptPeonDB.results[THREAD] = seqWas, resultWas
+end
+
 -- Nobody answers: resend, then stop and say so. Nothing is lost.
 stub.timers = {}
 ns:QueueReply(THREAD, "into the void")
@@ -147,6 +172,10 @@ for _ = 1, 3 do
   stub.runTimers() -- Second check, then resend or give up.
 end
 check("tried three times", stuckEntry.tries == 3, stuckEntry.tries)
+check("three tries are 12 seconds, which a busy companion app can take, so not yet", not stuckEntry.stuck and stuckEntry.waiting and not PromptPeonDB.results[THREAD], stuckEntry.stuck)
+check("and chat stays quiet", not stub.chat[#stub.chat] or not stub.chat[#stub.chat]:find("not answering", 1, true), stub.chat[#stub.chat])
+stub.now = stub.now + 100
+stub.runTimers() -- The last look, and still nobody.
 check("stuck is flagged", stuckEntry.stuck == true)
 check("stuck offers a reload", ns:NeedsReload() and ns.UI.reload.shown)
 check("stuck says what to do", ns.UI.notice.text:find("Reload UI", 1, true), ns.UI.notice.text)
@@ -1377,29 +1406,28 @@ stub.timers = {}
 -- Nobody gets surprised by a reload.
 check("time for a sentence", ns.AboutTime(30) == "under a minute" and ns.AboutTime(60) == "about 1 minute" and ns.AboutTime(610) == "about 11 minutes" and ns.AboutTime(3600) == "about 1 hour" and ns.AboutTime(9000) == "about 3 hours", ns.AboutTime(610))
 check("time for a small space", ns.ShortTime(30) == "<1m" and ns.ShortTime(610) == "~11m" and ns.ShortTime(7200) == "~2h", ns.ShortTime(610))
-local savedSlot, savedPace = ns.nextSlot, ns.refreshPace
-local function reloadState(left, pace)
+local savedSlot = ns.nextSlot
+local function reloadState(left)
   ns.nextSlot = ns.SLOT_COUNT - left + 1
-  ns.refreshPace = pace
   ns.UI:Render()
 end
-reloadState(300, 20)
+reloadState(300)
 check("plenty left shows a quiet estimate", ns.UI.reloadHint.text.text == "Reload in ~2h", ns.UI.reloadHint.text.text)
 check("no button yet", not ns.UI.reload.shown)
-reloadState(60, 20)
+reloadState(60)
 check("twenty minutes left offers the button", ns.UI.reload.shown and ns.UI.reloadHint.text.text == "Reload in ~20m", ns.UI.reloadHint.text.text)
 check("without a warning strip, since nothing is wrong yet", not (ns:Problem() or ""):find("Reload", 1, true), ns:Problem())
 ns.warnedSoon, ns.warnedStopped = nil, nil
 local chatBefore = #stub.chat
-reloadState(60, 20)
+reloadState(60)
 ns:WarnAboutReload()
 check("that far out chat stays quiet", #stub.chat == chatBefore)
-reloadState(25, 20)
+reloadState(25)
 ns:WarnAboutReload()
 check("close to the end chat says it plainly", #stub.chat == chatBefore + 1 and stub.chat[#stub.chat]:find("about 9 minutes of live updates left", 1, true) and stub.chat[#stub.chat]:find("Press Reload UI", 1, true), stub.chat[#stub.chat])
 ns:WarnAboutReload()
 check("once", #stub.chat == chatBefore + 1)
-reloadState(0, 20)
+reloadState(0)
 ns:WarnAboutReload()
 check("running out says so once more", #stub.chat == chatBefore + 2 and stub.chat[#stub.chat]:find("stopped", 1, true), stub.chat[#stub.chat])
 check("and the footer says reload now", ns.UI.reloadHint.text.text == "Reload now", ns.UI.reloadHint.text.text)
@@ -1407,18 +1435,30 @@ ns.Chat:Status()
 local statusWords = table.concat(stub.chat, "\n", math.max(#stub.chat - 1, 1))
 check("/peon status uses plain words", statusWords:find("0 live updates left before you need a reload", 1, true), statusWords)
 check("and shows how long sending takes", statusWords:find("Sending: the last step took", 1, true), statusWords)
-ns.nextSlot, ns.refreshPace = savedSlot, savedPace
+ns.nextSlot = savedSlot
 ns.warnedSoon, ns.warnedStopped = nil, nil
-local paceBefore = ns.refreshPace
-ns.refreshPace = nil
-stub.now = stub.now + 100
-ns.lastRefresh = stub.now - 40
-ns:Refresh()
-check("the estimate follows how fast updates really go", ns.refreshPace == 40, ns.refreshPace)
-stub.now = stub.now + 20
-ns:Refresh()
-check("and changes smoothly", ns.refreshPace == 38, ns.refreshPace)
-ns.refreshPace = paceBefore
+do
+  -- A few clicks spend updates seconds apart. That must not read as hours gone.
+  local before, leftBefore = ns:ReloadIn()
+  for _, gap in ipairs({ 1.5, 2.5, 5, 5, 5 }) do
+    stub.now = stub.now + gap
+    ns:Refresh()
+  end
+  local after, leftAfter = ns:ReloadIn()
+  check("a burst of updates takes off only what it spent", leftAfter == leftBefore - 5 and after == before - 5 * 20, before - after)
+  stub.now = stub.now + 20
+  ns:Refresh()
+  local nextOne = ns:ReloadIn()
+  check("and the next ordinary update takes off its own 20 seconds", nextOne == after - 20, after - nextOne)
+  -- The chat warning can fire with the log closed, where updates are further apart.
+  local isOpen, counts = ns.UI.IsOpen, ns.Counts
+  ns.UI.IsOpen = function() return false end
+  ns.Counts = function() return { running = 1, needs = 0 } end
+  check("log closed with agents working lasts at 30 seconds an update", ns:RefreshWait() == 30, ns:RefreshWait())
+  ns.Counts = function() return { running = 0, needs = 0 } end
+  check("log closed with nothing happening lasts at 90", ns:RefreshWait() == 90, ns:RefreshWait())
+  ns.UI.IsOpen, ns.Counts = isOpen, counts
+end
 ns.UI:Render()
 
 local reloadTipLines = {}
@@ -1987,13 +2027,25 @@ stub.slotData = snapshot({ ack = PromptPeonDB.nextSeq - 1, at = ctlStamp, thread
 ns:RefreshAndRender()
 stub.timers = {}
 check("a cleared snapshot says nothing about any thread", ns.lastStatus == nil and Game.seeded == nil)
-check("we ask again soon", (function()
+do
+  local slotWas = ns.nextSlot
+  ns.nextSlot = 2
+  check("we ask again soon", (function()
+    local before = ns.nextSlot
+    stub.now = stub.now + 6
+    stub.tick()
+    stub.timers = {}
+    return ns.nextSlot == before + 1
+  end)())
+  -- With the companion app not running, the real one never comes.
+  ns.nextSlot = ns.QUIET_RUSH_SLOTS + 1
   local before = ns.nextSlot
   stub.now = stub.now + 6
   stub.tick()
   stub.timers = {}
-  return ns.nextSlot == before + 1
-end)())
+  check("but not for long, or a cleared snapshot would use up every update", ns.nextSlot == before, ns.nextSlot - before)
+  ns.nextSlot = slotWas
+end
 ctlStamp = ctlStamp + 1
 stub.now = stub.now + 100
 stub.slotData = snapshot({ ack = PromptPeonDB.nextSeq - 1, at = ctlStamp, threads = { { id = RED_A, p = "Shop", t = "Old work", s = "running", u = time(), lc = { 1, 500, 0, 9 }, m = { { "a", "old", "d", 9 } } } } })

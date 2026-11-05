@@ -24,6 +24,7 @@ ns.RUNTIME_MODES = {
 ns.REFRESH_OPEN = 20 -- Seconds between refreshes with the log open. 1000 of these last over 5 hours.
 ns.REFRESH_WATCHING = 30 -- Log closed, agents working: the tracker and party frames stay fresh.
 ns.REFRESH_CLOSED = 90 -- Log closed, nothing happening.
+ns.QUIET_RUSH_SLOTS = 12 -- Updates to spend at 5 seconds apart, waiting for the first real data after login.
 ns.BRIDGE_QUIET_AFTER = 45 -- A snapshot this old when loaded means the bridge has stopped.
 ns.MAX_REPLY_BYTES = 4000
 ns.FIRST_TRACKED = 5

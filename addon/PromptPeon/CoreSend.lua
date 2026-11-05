@@ -228,6 +228,10 @@ function ns:CheckDelivered(entry, attempt)
     elseif (entry.tries or 0) < self.MAX_TRIES then
       entry.waiting = nil
       self:StartNextSend()
+    elseif attempt == 2 then
+      -- That was about 12 seconds, and a slow call to T3 holds the bridge up for longer than that.
+      -- Only call it not answering once it has been quiet long enough to have really stopped.
+      C_Timer.After(self.BRIDGE_QUIET_AFTER, function() ns:CheckDelivered(entry, 3) end)
     else
       entry.waiting = nil
       entry.stuck = true

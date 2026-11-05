@@ -90,7 +90,6 @@ function UI:BuildOptionsPage()
   heading("Updates")
   slider("Refresh", "Refresh every", 10, 60, 5, function() return ns:RefreshSeconds() end, function(value)
     ns.db.refreshSeconds = math.floor(value + 0.5)
-    ns.refreshPace = nil
     UI:SyncOptions()
     UI:RenderReloadHint()
   end, function(value)

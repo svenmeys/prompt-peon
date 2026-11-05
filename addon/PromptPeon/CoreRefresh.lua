@@ -35,10 +35,21 @@ end
 ns.RELOAD_SOON = 30 * 60
 ns.RELOAD_WARN = 10 * 60
 
---- Live updates left, and how many seconds they last at the pace we have been using them.
+--- Seconds between updates when nothing is being waited for. Depends on the log and on the agents.
+function ns:RefreshWait()
+  local pace = self:RefreshSeconds()
+  if self.UI and self.UI:IsOpen() then return pace end
+  local counts = self:Counts()
+  -- Half again as slow with the log closed: 20 open is 30 closed.
+  if counts.running + counts.needs > 0 then return math.ceil(pace * self.REFRESH_WATCHING / self.REFRESH_OPEN) end
+  return self.REFRESH_CLOSED
+end
+
+--- Live updates left, and how long they last from here. Every update spent takes one wait off, so a
+--- burst of clicks costs what it really costs and isn't assumed to go on for hours.
 function ns:ReloadIn()
   local left = math.max(0, self.SLOT_COUNT - self.nextSlot + 1)
-  return left * (self.refreshPace or self:RefreshSeconds()), left
+  return left * self:RefreshWait(), left
 end
 
 --- How often the log refreshes while open, from Options. Each one loads a file from disk, and Blizzard's
@@ -97,12 +108,7 @@ function ns:Refresh()
   end
   local name = string.format("%sIn%03d", addonName, self.nextSlot)
   self.nextSlot = self.nextSlot + 1
-  local now = GetTime()
-  if self.lastRefresh > 0 then
-    local gap = now - self.lastRefresh
-    self.refreshPace = self.refreshPace and (self.refreshPace * 0.9 + gap * 0.1) or gap
-  end
-  self.lastRefresh = now
+  self.lastRefresh = GetTime()
   self:WarnAboutReload()
   local started = debugprofilestop()
   local loaded, reason = C_AddOns.LoadAddOn(name)
@@ -129,16 +135,11 @@ function ns:Tick()
     if self.nextSlot <= self.SLOT_COUNT and GetTime() - self.lastRefresh >= 60 then self:RefreshAndRender() end
     return
   end
-  local open = self.UI and self.UI:IsOpen()
-  local pace = self:RefreshSeconds()
-  local wait = open and pace or self.REFRESH_CLOSED
-  if not open then
-    local counts = self:Counts()
-    -- Half again as slow with the log closed: 20 open is 30 closed.
-    if counts.running + counts.needs > 0 then wait = math.ceil(pace * self.REFRESH_WATCHING / self.REFRESH_OPEN) end
-  end
-  if open and self.UI:IsLoading(self:ThreadById(self.db.selected)) then wait = 5 end
-  if self.snapshot and self.snapshot.quiet then wait = 5 end -- Just logged in: the real one is on its way.
+  local wait = self:RefreshWait()
+  if self.UI and self.UI:IsOpen() and self.UI:IsLoading(self:ThreadById(self.db.selected)) then wait = 5 end
+  -- Just logged in: the real one is on its way. If the companion app isn't running it never comes,
+  -- so hurry for a minute at most, or that alone would use up every update in about 80 minutes.
+  if self.snapshot and self.snapshot.quiet and self.nextSlot <= self.QUIET_RUSH_SLOTS then wait = 5 end
   if GetTime() - self.lastRefresh < wait then return end
   self:RefreshAndRender()
 end
