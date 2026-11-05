@@ -55,6 +55,7 @@ function ns:QueueReply(threadId, typed)
   if typed:find("\1", 1, true) then return nil, "That has a character in it that can't be sent." end
   local ok, reason = self:Enqueue(threadId, typed)
   if ok then
+    self:MarkSending(self.db.pending[#self.db.pending])
     self:PeonSays("work")
     if self.Game then self.Game:Earn("zugzug") end
   end

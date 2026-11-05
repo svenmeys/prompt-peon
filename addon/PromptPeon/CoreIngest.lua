@@ -178,6 +178,46 @@ function ns:SettleStarting(snapshot)
   self.starting = kept
 end
 
+--- Remember where the thread stood when you sent this, so T3's own copy can be told from what was
+--- already there. Rows are compared by number: T3 may show the words differently from how you typed them.
+function ns:MarkSending(entry)
+  local newest, queued, ahead = 0, 0, 0
+  local thread = self:ThreadById(entry.thread)
+  for _, row in ipairs(thread and thread.m or {}) do
+    if row[1] == "u" and row[3] == "q" then
+      queued = queued + 1
+    elseif row[1] == "u" then
+      newest = math.max(newest, tonumber(row[4]) or 0)
+    end
+  end
+  for _, list in ipairs({ self.db.pending, self.sentShowing }) do
+    for _, other in ipairs(list) do
+      if other ~= entry and other.thread == entry.thread and not other.command then ahead = ahead + 1 end
+    end
+  end
+  entry.after, entry.queuedBefore, entry.ahead = newest, queued, ahead
+end
+
+--- The companion app confirms a message before it has T3's copy of it. Yours stays until that copy
+--- comes, and goes in the end if it never does. Only an update can change this, so it can't run out in a fight.
+function ns:SettleSent()
+  local kept = {}
+  for _, entry in ipairs(self.sentShowing) do
+    local thread = self:ThreadById(entry.thread)
+    local newer, queued = 0, 0
+    for _, row in ipairs(thread and thread.m or {}) do
+      if row[1] == "u" and row[3] == "q" then
+        queued = queued + 1
+      elseif row[1] == "u" and (tonumber(row[4]) or 0) > (entry.after or math.huge) then
+        newer = newer + 1
+      end
+    end
+    local arrived = newer + math.max(0, queued - (entry.queuedBefore or 0)) > (entry.ahead or 0)
+    if not arrived and GetTime() - entry.shownSince < self.STARTING_SHOWS_FOR then kept[#kept + 1] = entry end
+  end
+  self.sentShowing = kept
+end
+
 --- T3 has it, so spend one update now to show it, rather than leaving it to the next one.
 function ns:UpdateNow()
   if InCombatLockdown() then return end
@@ -210,6 +250,10 @@ function ns:ApplyAcks(snapshot)
       -- A command that worked has nothing to say: its effect shows in the log itself.
       if not (entry.command and result == "sent") then
         db.results[entry.thread] = { text = result, at = time() }
+      end
+      if result == "sent" and not entry.command then
+        entry.shownSince = GetTime()
+        self.sentShowing[#self.sentShowing + 1] = entry
       end
       local starts = entry.command == "new" or entry.command == "newm"
       if result == "sent" and (starts or entry.command == "steer") then

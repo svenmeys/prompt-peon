@@ -4319,5 +4319,96 @@ do
   check("a stale click does nothing", PromptPeonDB.selected == before)
 end
 
+-- A message you send stays on screen until T3's own copy of it comes in an update.
+do
+  stub.inCombat = false
+  ns.tx, PromptPeonDB.pending = nil, {}
+  PromptPeonDB.hiddenThreads, PromptPeonDB.hiddenProjects = {}, {}
+  ns.sentShowing = {}
+  local base = { { "u", "an older question", "d", 10 }, { "a", "an older answer", "d", 11 } }
+  local function with(...)
+    local rows = { base[1], base[2] }
+    for _, row in ipairs({ ... }) do rows[#rows + 1] = row end
+    return rows
+  end
+  local function update(rows, ack, res)
+    stub.now = stub.now + 20
+    stub.slotData = snapshot({ ack = ack, res = res or {}, pk = {},
+      threads = { { id = THREAD, p = "Shop", t = "WoW addon", s = "running", u = time(), m = rows } } })
+    PromptPeonDB.selected = THREAD
+    ns:RefreshAndRender()
+    stub.timers = {}
+  end
+  local function shown(words)
+    local count = 0
+    for _, line in ipairs(ns.UI.lines) do
+      if line.shown and tostring(line.text):find(words, 1, true) then count = count + 1 end
+    end
+    return count
+  end
+  local function send(words)
+    ns:QueueReply(THREAD, words)
+    ns:Deliver()
+    drainSend()
+    stub.timers = {}
+    ns.UI:Render()
+    return PromptPeonDB.pending[#PromptPeonDB.pending].seq
+  end
+  local function sent(seq) return { [tostring(seq)] = "sent" } end
+  update(with(), PromptPeonDB.nextSeq - 1)
+
+  local seq = send("words on their way")
+  check("your message shows while it goes", shown("words on their way") == 1, shown("words on their way"))
+  update(with(), seq, sent(seq))
+  check("the companion app has confirmed it", #PromptPeonDB.pending == 0, #PromptPeonDB.pending)
+  check("it stays until T3's copy comes", shown("words on their way") == 1, shown("words on their way"))
+  update(with({ "u", "words on their way", "d", 12 }), seq, sent(seq))
+  check("T3's copy takes over, so it isn't there twice", shown("words on their way") == 1, shown("words on their way"))
+  check("and ours is gone", #ns.sentShowing == 0, #ns.sentShowing)
+  update(with({ "u", "words on their way", "d", 12 }), seq, sent(seq))
+  base = with({ "u", "words on their way", "d", 12 })
+
+  seq = send("words for a busy agent")
+  update(with({ "u", "words for a busy agent", "q", 0, "run-1" }), seq, sent(seq))
+  check("arriving in T3's queue counts, even with the confirmation", shown("words for a busy agent") == 1 and #ns.sentShowing == 0, shown("words for a busy agent"))
+  update(with(), seq, sent(seq))
+
+  seq = send("first of two")
+  local second = send("second of two")
+  update(with({ "u", "first of two", "d", 20 }), second, { [tostring(seq)] = "sent", [tostring(second)] = "sent" })
+  check("with two sent quickly, the first is T3's", shown("first of two") == 1, shown("first of two"))
+  check("and the second still waits for its own", shown("second of two") == 1 and #ns.sentShowing == 1, shown("second of two"))
+  update(with({ "u", "first of two", "d", 20 }, { "u", "second of two", "d", 21 }), second, sent(second))
+  check("then both are T3's, once each", shown("first of two") == 1 and shown("second of two") == 1 and #ns.sentShowing == 0, #ns.sentShowing)
+  base = with({ "u", "first of two", "d", 20 }, { "u", "second of two", "d", 21 })
+
+  seq = send("words T3 never shows")
+  update(with(), seq, sent(seq))
+  check("it waits a while for T3", shown("words T3 never shows") == 1, shown("words T3 never shows"))
+  stub.now = stub.now + ns.STARTING_SHOWS_FOR
+  update(with(), seq, sent(seq))
+  check("and goes if T3 never shows it", shown("words T3 never shows") == 0 and #ns.sentShowing == 0, shown("words T3 never shows"))
+
+  seq = send("words T3 refused")
+  update(with(), seq, { [tostring(seq)] = "failed: no" })
+  check("a refused message isn't kept as if it went", shown("words T3 refused") == 0 and #ns.sentShowing == 0, shown("words T3 refused"))
+  PromptPeonDB.drafts[THREAD], PromptPeonDB.results[THREAD] = nil, nil
+
+  seq = send("words for a thread you hide")
+  update(with(), seq, sent(seq))
+  PromptPeonDB.hiddenThreads[THREAD] = true
+  ns.UI:Render()
+  check("hiding the thread takes it off the screen too", shown("words for a thread you hide") == 0, shown("words for a thread you hide"))
+  PromptPeonDB.hiddenThreads[THREAD] = nil
+  ns.sentShowing = {}
+
+  ns:QueueCommand(THREAD, "view")
+  drainSend()
+  stub.timers = {}
+  seq = PromptPeonDB.pending[#PromptPeonDB.pending].seq
+  update(with(), seq, sent(seq))
+  check("a command was never words of yours", #ns.sentShowing == 0, #ns.sentShowing)
+end
+
 print(string.format("%d checks, %d failed", checks, failures))
 os.exit(failures == 0 and 0 or 1)

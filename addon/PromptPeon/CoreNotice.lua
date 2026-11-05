@@ -109,6 +109,7 @@ end
 function ns:NoticeChanges(snapshot)
   self:TrackFirstQuests(snapshot)
   self:SettleStarting(snapshot)
+  self:SettleSent()
   local previous, current = self.lastStatus, {}
   local queuedBefore, queuedNow = self.lastQueued or {}, {}
   for _, thread in ipairs(snapshot.threads) do

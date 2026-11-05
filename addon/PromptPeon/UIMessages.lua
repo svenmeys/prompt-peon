@@ -346,18 +346,20 @@ function UI:RenderDetail(thread)
   end
   if thread.hd and not view then
     add(ns.snapshot.lk and ns.Plain(ns.snapshot.lk) or "This thread is hidden, so its text stays out of the game. Show it to read it here.", 0.70, 0.68, 0.60, "PromptPeonSmall")
-  elseif #rows == 0 and #ns.db.pending == 0 and not view then
+  elseif #rows == 0 and #ns.db.pending == 0 and #ns.sentShowing == 0 and not view then
     add("No messages in this update. Open the thread in T3 for its history.", 0.65, 0.62, 0.55)
   end
-  -- Your reply shows straight away, before the bridge has answered.
-  for _, entry in ipairs(ns.db.pending) do
-    if entry.thread == thread.id and not entry.command and not view then
-      if lastRole ~= "u" then
-        add("You", 1.0, 0.82, 0.0)
-        lastRole = "u"
+  -- Your reply shows straight away, and stays until T3's own copy of it arrives.
+  for _, list in ipairs({ ns.sentShowing, ns.db.pending }) do
+    for _, entry in ipairs(list) do
+      if entry.thread == thread.id and not entry.command and not view and not thread.hd and not ns:IsHidden(thread) then
+        if lastRole ~= "u" then
+          add("You", 1.0, 0.82, 0.0)
+          lastRole = "u"
+        end
+        addChunks(entry.text, 0.75, 0.73, 0.65)
+        canvas.y = canvas.y + 8
       end
-      addChunks(entry.text, 0.75, 0.73, 0.65)
-      canvas.y = canvas.y + 8
     end
   end
   if not view and thread.s == "error" and ns.Game then
