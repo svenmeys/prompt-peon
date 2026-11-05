@@ -30,6 +30,7 @@ ns.MAX_REPLY_BYTES = 4000
 ns.FIRST_TRACKED = 5
 ns.STARTING_SHOWS_FOR = 30 -- Seconds. Long enough for T3 to answer, and it goes if T3 never does.
 ns.starting = {} -- New threads you've just started, until T3's own row arrives.
+ns.sentShowing = {} -- Messages the companion app has confirmed, until T3's own copy arrives.
 ns.CHUNK_BYTES = 1500 -- One text block in the log.
 ns.FRAME_SECONDS = 0.04
 ns.FIRST_FRAME_SECONDS = 0.12 -- Held longer, so a bridge that was idling wakes up in time.
