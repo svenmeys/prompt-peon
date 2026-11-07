@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import time
 
-from . import catalog, diffs, gametext, gates, pullrequests, settings, t3errors, threadstate
+from . import catalog, diffs, gametext, gates, pullrequests, settings, t3errors, threadstate, timeline
 
 
 def run_command(bridge, seq: int, thread_id: str, text: str, size: int) -> None:
@@ -46,7 +46,7 @@ def command_result(bridge, verb: str, thread_id: str, argument: str) -> str:
         if verb == "unsettle":
             return "failed: T3 no longer lists this thread. Reopen it in T3, then try again."
         return "failed: that thread is not on this T3 server"
-    if verb in ("diff", "agents", "file", "older", "view", "pr", "prdiff") and bridge.hides(known[thread_id]):
+    if verb in ("diff", "agents", "file", "older", "view", "pr", "prdiff", "answer") and bridge.hides(known[thread_id]):
         return "failed: this thread is hidden. Show it first."
     if verb == "stop":
         bridge.remote.stop_thread(thread_id)
@@ -65,8 +65,10 @@ def command_result(bridge, verb: str, thread_id: str, argument: str) -> str:
         # Pictures stay out: they are only for threads that ride along in every refresh.
         bridge.keep_loaded(thread_id, vm=bridge.previews.prepare(thread_id, bridge.remote.detail(thread_id)["rows"], False))
         return "sent"
-    elif verb in ("steer", "editq", "setmodel") and gates.refused_full_access(bridge, known[thread_id]):
+    elif verb in ("steer", "editq", "setmodel", "answer") and gates.refused_full_access(bridge, known[thread_id]):
         return gates.refused_full_access(bridge, known[thread_id])
+    elif verb == "answer":
+        return answer_question(bridge, thread_id, argument)
     elif verb == "steer":
         active = known[thread_id].get("activeRunId")
         if not active:
@@ -109,6 +111,56 @@ def command_result(bridge, verb: str, thread_id: str, argument: str) -> str:
         return "sent"
     else:
         return f"failed: this companion app doesn't know {verb!r}"
+    bridge.seen.pop(thread_id, None)
+    return "sent"
+
+
+def answer_question(bridge, thread_id: str, argument: str) -> str:
+    """Your answer to the question the agent is waiting on. The game only says which answers you
+    picked, counted from 1, or what you typed. What gets sent is T3's own words, read fresh,
+    so the game can't answer a question that changed or pick something that isn't offered.
+
+    The argument is the question's mark from the snapshot, then one line per question: "o:2", "o:1,3" or "t:your words".
+    """
+    request_id, _, lines = argument.partition("\n")
+    item = bridge.remote.open_question(thread_id)
+    if not item or not isinstance(item.get("requestId"), str) or timeline.request_mark(item["requestId"]) != request_id.strip():
+        return "failed: that question isn't open any more. It may have been answered in T3"
+    if not timeline.question_choices(item):
+        return "failed: answer this one in T3, it doesn't fit in the game"
+    questions = item["questions"]
+    lines = lines.split("\n")
+    if len(lines) != len(questions):
+        return "failed: answer every question first"
+    answers = {}
+    for question, line in zip(questions, lines):
+        kind, _, value = line.partition(":")
+        if kind == "o":
+            options = timeline.answer_options(question)
+            try:
+                picked = [int(part) for part in value.split(",")]
+            except ValueError:
+                return "failed: pick one of the answers shown"
+            if not picked or len(set(picked)) != len(picked) or not all(1 <= number <= len(options) for number in picked):
+                return "failed: pick one of the answers shown"
+            if len(picked) > 1 and question.get("multiSelect") is not True:
+                return "failed: this question takes one answer"
+            # T3's own window sends an answer's value when it has one, and its label when it doesn't.
+            words = [options[number - 1].get("value") if isinstance(options[number - 1].get("value"), str) else options[number - 1]["label"]
+                     for number in picked]
+            answers[question["id"]] = words if question.get("multiSelect") is True else words[0]
+        elif kind == "t":
+            if question.get("allowCustomAnswer") is False:
+                return "failed: this question only takes one of its answers"
+            text = value.strip()
+            if not text:
+                return "failed: type an answer first"
+            if len(text.encode("utf-8")) > settings.MAX_REPLY_BYTES:
+                return f"failed: the answer is too long. Keep it under {settings.MAX_REPLY_BYTES} bytes"
+            answers[question["id"]] = text
+        else:
+            return "failed: answer every question first"
+    bridge.remote.answer_question(thread_id, item["requestId"], answers)
     bridge.seen.pop(thread_id, None)
     return "sent"
 

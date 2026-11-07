@@ -90,6 +90,8 @@ def build_snapshot(shell: dict | None, messages: dict, *, url: str, error: str, 
             row["a"] = "Waiting for your answer" if pending.get("kind") == "user_input" else "Waiting for your approval"
             if pending.get("blocking") is False:
                 row["nb"] = True  # A normal reply answers this one.
+            elif pending.get("kind") == "user_input":
+                row["uq"] = True  # A question, not an approval, so the game can answer it.
         if threadstate.is_hidden(hidden, thread["id"], row["p"]):
             # Hidden means the game never gets the words, so only the bare row stays.
             row = {key: row[key] for key in ("id", "p", "t", "s", "u")}

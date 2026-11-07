@@ -96,7 +96,7 @@ def deliver(bridge, entries: list[dict], *, from_file: bool = False) -> None:
         if text.startswith(settings.COMMAND_MARK):
             verb = text[1:].partition("\n")[0]
             # Reading more doesn't change anything, but these do, so they count like replies.
-            if verb in ("stop", "settle", "new", "newm", "setmodel", "steer", "cancelq", "editq", "unsettle", "snooze", "unsnooze"):
+            if verb in ("stop", "settle", "new", "newm", "setmodel", "steer", "cancelq", "editq", "unsettle", "snooze", "unsnooze", "answer"):
                 now = time.time()
                 bridge.send_times = [stamp for stamp in bridge.send_times if now - stamp < 60]
                 if len(bridge.send_times) >= settings.MAX_SENDS_PER_MINUTE:

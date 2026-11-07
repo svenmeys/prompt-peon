@@ -38,6 +38,97 @@ function UI:QueueButton(index)
   return button
 end
 
+--- An open question's answers, as the companion app sent them, checked here because a bad shape
+--- must draw as words and never break the log. Nil means show the question as words.
+function UI.QuestionChoices(value)
+  if type(value) ~= "table" or type(value.r) ~= "string" or #value.r ~= 8 or not value.r:match("^%x+$") then return nil end
+  if type(value.q) ~= "table" or #value.q == 0 or #value.q > 4 then return nil end
+  for _, question in ipairs(value.q) do
+    if type(question) ~= "table" or type(question.t) ~= "string" or type(question.h) ~= "string" or type(question.o) ~= "table" then return nil end
+    if #question.o > 10 or (#question.o == 0 and question.c ~= true) then return nil end
+    for _, option in ipairs(question.o) do
+      if type(option) ~= "table" or type(option[1]) ~= "string" or type(option[2]) ~= "string" then return nil end
+    end
+  end
+  return value
+end
+
+--- The question this thread is waiting on, if the game can answer it.
+function UI.OpenQuestion(thread)
+  if not thread or not thread.uq then return nil end
+  for _, row in ipairs(thread.m or {}) do
+    if row[1] == "q" and UI.QuestionChoices(row[5]) then return row[5] end
+  end
+end
+
+UI.answers, UI.answerSent = {}, {}
+
+--- What you have picked so far. A new question starts fresh.
+function UI:AnswerFor(threadId, choices)
+  local answer = self.answers[threadId]
+  if not answer or answer.mark ~= choices.r then
+    answer = { mark = choices.r, picks = {}, typed = {} }
+    for index = 1, #choices.q do answer.picks[index] = {} end
+    self.answers[threadId] = answer
+  end
+  return answer
+end
+
+--- One answer clicked. A question with one answer swaps it, one with several ticks it on or off.
+function UI:PickAnswer(thread, choices, index, number)
+  local answer = self:AnswerFor(thread.id, choices)
+  if choices.q[index].m then
+    answer.picks[index][number] = not answer.picks[index][number] or nil
+  else
+    answer.picks[index] = { [number] = true }
+  end
+  answer.typed[index] = nil
+end
+
+--- "Something else": the reply box holds your own answer until you press Enter.
+function UI:TypeAnswer(thread, choices, index)
+  self:SaveDraft()
+  self.editingQueued = nil
+  self.answering = { thread = thread.id, mark = choices.r, question = index }
+  self.input.EditBox:SetText(self:AnswerFor(thread.id, choices).typed[index] or "")
+  self.input.EditBox:SetFocus()
+end
+
+--- Leave your own answer and give the box back to your draft.
+function UI:StopAnswering()
+  self.answering = nil
+  self.input.EditBox:SetText(ns.db.drafts[self.draftFor] or "")
+end
+
+function UI.AnswerReady(choices, answer)
+  for index = 1, #choices.q do
+    if not answer.typed[index] and not next(answer.picks[index]) then return false end
+  end
+  return true
+end
+
+--- Sends which answers you picked, counted from 1, or what you typed. The companion app looks up
+--- T3's own words for them, so only the question's real answers can go.
+function UI:SendAnswer(thread, choices)
+  local answer = self:AnswerFor(thread.id, choices)
+  local lines = { choices.r }
+  for index, question in ipairs(choices.q) do
+    if answer.typed[index] then
+      lines[#lines + 1] = "t:" .. answer.typed[index]
+    else
+      local picked = {}
+      for number = 1, #question.o do
+        if answer.picks[index][number] then picked[#picked + 1] = tostring(number) end
+      end
+      if #picked == 0 then return false end
+      lines[#lines + 1] = "o:" .. table.concat(picked, ",")
+    end
+  end
+  if not ns:QueueCommand(thread.id, "answer", table.concat(lines, "\n")) then return false end
+  self.answerSent[choices.r] = GetTime()
+  return true
+end
+
 -- Options and the like don't need a thread, and with none open they're how you find out why.
 local NO_THREAD = { id = "", t = "", p = "", s = "idle" }
 
@@ -87,6 +178,8 @@ function UI:RenderDetail(thread)
 
   if thread.s == "needs" then
     add(thread.nb and "This agent asked you something. Your reply here answers it."
+      or thread.uq and UI.OpenQuestion(thread) and "This agent is asking you something. Pick your answer below."
+      or thread.uq and "This agent is asking you something. Answer it in T3. A reply here only queues a message."
       or "This agent is waiting for your approval. Answer it in T3. A reply here only queues a message.", 1.0, 0.66, 0.26)
     canvas.y = canvas.y + 6
   end
@@ -282,7 +375,50 @@ function UI:RenderDetail(thread)
       position = position + 1
     elseif row[1] == "q" then
       add("The agent is asking:", 1.0, 0.66, 0.26)
-      addChunks(row[2], 1.0, 0.85, 0.60)
+      local choices = thread.uq and UI.QuestionChoices(row[5])
+      if not choices then
+        addChunks(row[2], 1.0, 0.85, 0.60)
+      else
+        -- One clickable line per answer, the way a quest offers its rewards.
+        local answer = self:AnswerFor(thread.id, choices)
+        local function choiceLine(words, picked, onClick)
+          canvas.heads = canvas.heads + 1
+          local head = self:GroupHead(canvas.heads)
+          head.key, head.open = "answer:" .. canvas.heads, false
+          showFold(head, nil)
+          head:ClearAllPoints()
+          head:SetPoint("TOPLEFT", self.detailContent, "TOPLEFT", 8, -canvas.y)
+          head:SetSize(width - 12, 16)
+          head.text:SetText((picked and "|cffffd100" or "|cffe0ddd0") .. words .. "|r")
+          head.onClick = onClick
+          head:Show()
+          canvas.y = canvas.y + 18
+        end
+        for index, question in ipairs(choices.q) do
+          if #choices.q > 1 and question.h ~= "" then add(ns.Plain(question.h), 0.80, 0.68, 0.30, "PromptPeonSmall") end
+          addChunks(question.t, 1.0, 0.85, 0.60)
+          for number, option in ipairs(question.o) do
+            local picked = answer.picks[index][number]
+            local mark = question.m and (picked and "[x] " or "[  ] ") or (picked and "(o) " or "(  ) ")
+            choiceLine(mark .. ns.Plain(option[1]), picked, function() UI:PickAnswer(thread, choices, index, number) end)
+            if option[2] ~= "" then add(ns.Plain(option[2]), 0.62, 0.60, 0.54, "PromptPeonSmall", 34) end
+          end
+          if question.c then
+            local typed = answer.typed[index]
+            choiceLine(typed and ("(o) Your own answer: " .. ns.Plain(typed)) or "(  ) Something else. Type your own answer",
+              typed ~= nil, function() UI:TypeAnswer(thread, choices, index) end)
+          end
+          canvas.y = canvas.y + 4
+        end
+        local sent = self.answerSent[choices.r]
+        if sent and GetTime() - sent < STEER_SHOWS_FOR then
+          add("Answer sent. The agent goes on when T3 has it.", 0.62, 0.60, 0.54, "PromptPeonSmall")
+        elseif UI.AnswerReady(choices, answer) then
+          choiceLine(">> Send your answer", true, function() UI:SendAnswer(thread, choices) end)
+        else
+          add(#choices.q > 1 and "Pick an answer for each question, then send it." or "Pick an answer, then send it.", 0.62, 0.60, 0.54, "PromptPeonSmall")
+        end
+      end
       canvas.y = canvas.y + 8
       lastRole = nil
       position = position + 1

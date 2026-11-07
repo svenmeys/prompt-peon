@@ -55,6 +55,7 @@ function UI:Render()
     self:SetNotice("")
   elseif thread then
     if self.draftFor ~= thread.id then
+      self.answering = nil -- Before saving, so your answer doesn't become this thread's draft.
       self:SaveDraft() -- What is in the box belongs to the thread it was typed for, even if that's gone.
       self.editingQueued = nil
       self.draftFor = thread.id
@@ -62,8 +63,19 @@ function UI:Render()
     elseif box:GetText() == "" and ns.db.drafts[thread.id] and not box:HasFocus() and not editing then
       box:SetText(ns.db.drafts[thread.id]) -- A reply that failed comes back here.
     end
-    self.hint:SetText(editing and "You are editing a queued message" or "Reply to " .. ns.Plain(thread.t))
-    self:SetNotice(editing and "Editing a queued message. Enter saves it. Empty the box and press Enter to stop." or self:ReplyState(thread))
+    local answering = self.answering
+    local choices = answering and UI.OpenQuestion(thread)
+    if answering and (not choices or choices.r ~= answering.mark) then
+      self:StopAnswering() -- It was answered or changed while you typed.
+      answering, choices = nil, nil
+    end
+    if answering then
+      self.hint:SetText("Your answer to: " .. ns.Plain(UI.Gist(choices.q[answering.question].t)))
+      self:SetNotice("Enter sends your answer. Empty the box and press Enter to go back.")
+    else
+      self.hint:SetText(editing and "You are editing a queued message" or "Reply to " .. ns.Plain(thread.t))
+      self:SetNotice(editing and "Editing a queued message. Enter saves it. Empty the box and press Enter to stop." or self:ReplyState(thread))
+    end
   else
     self.hint:SetText("")
     self:SetNotice("")

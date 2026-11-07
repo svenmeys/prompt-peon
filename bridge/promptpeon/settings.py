@@ -42,6 +42,10 @@ THREADS_WITH_MESSAGES = 30
 # come to about 110 KB, and Lua loads 2 MB of snapshot in about 6 ms.
 MESSAGES_PER_THREAD = 30
 MAX_REPLY_BYTES = 4000
+# An agent asks up to 4 questions with a few answers each. Anything bigger is answered in T3,
+# because the game would have to leave part of it out.
+MAX_QUESTIONS = 4
+MAX_ANSWER_OPTIONS = 10
 MAX_MESSAGE_CHARS = 300_000  # Far past anything real, and the game has to lay out all of it.
 MAX_READS_PER_MINUTE = 60
 MAX_SENDS_PER_MINUTE = 10

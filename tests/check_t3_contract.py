@@ -33,6 +33,7 @@ COMMANDS = {
     "queued-run.cancel": {"runId": "run:nobody"},
     "queued-run.edit": {"runId": "run:nobody", "text": "x"},
     "queued-message.promote-to-steer": {"queuedRunId": "run:nobody", "targetRunId": "run:nobody"},
+    "runtime-request.respond": {"requestId": "request:nobody", "answers": {"question:nobody": "x"}},
 }
 failures = 0
 

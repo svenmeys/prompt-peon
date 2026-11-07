@@ -101,6 +101,7 @@ WoW gives every addon access to the same things, and nothing can change that fro
 - **News goes in its own `Peon` chat tab:** finished threads, levels, loot and the like. In Options you can move it to your main chat or turn it off. What you ask for, and anything that goes wrong, always shows in your main chat.
 - **Chat shows only the start of a finished agent's message,** because other addons and chat logs keep what chat shows. The log has all of it. Your own replies stay out of chat.
 - Model and effort apply from a thread's next turn, and higher effort uses more of your quota.
+- **Answer an agent's question right in the log.** Each answer is a line you click, with what it means under it, and "Something else" lets you type your own. Pick one for each question, then click Send your answer. A question with more than 4 parts or more than 10 answers still has to be answered in T3, and the log says so.
 - **New threads start in the approval mode you pick** on the New thread page: Supervised until you pick another, and your pick stays. Auto and Full access need the same yes as sending to those agents. Approvals themselves have to be answered in T3, and that stays that way.
 - This hasn't been reviewed by Blizzard, and Blizzard can change what addons may do.
 

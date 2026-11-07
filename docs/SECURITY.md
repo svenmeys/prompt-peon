@@ -4,7 +4,7 @@ Prompt Peon lets a game addon send real messages to real agents. This page says 
 
 ## What it won't do
 
-- **Approve anything.** An agent's approval requests can only be answered in T3.
+- **Approve anything.** An agent's approval requests can only be answered in T3. Questions an agent asks you can be answered in the game, because an answer says no more than a reply could. Only the answers the question offers can be picked, and a question that changed or was answered meanwhile is refused.
 - **Turn an agent's words into code in the game.** They're only ever shown as text.
 - **Send to an agent that acts without asking,** or start one, unless you said yes to that. You can still stop it and turn it in.
 - **Cast a spell without asking.** A spell shows its exact words first, unless you turn that off in Options. No spell tells an agent to push.

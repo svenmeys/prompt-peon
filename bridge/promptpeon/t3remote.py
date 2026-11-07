@@ -182,6 +182,20 @@ class T3Remote:
         })
         return message_id
 
+    def open_question(self, thread_id: str) -> dict | None:
+        """The question this thread is waiting on right now, read fresh from T3, or None."""
+        base = f"/api/orchestration/threads/{urllib.parse.quote(thread_id)}"
+        items = self._request(f"{base}/bounded")["projection"].get("turnItems") or []
+        for item in sorted(items, key=lambda entry: entry.get("ordinal") or 0, reverse=True):
+            if item.get("type") == "user_input_request" and timeline.state_of(item) == "r":
+                return item
+        return None
+
+    def answer_question(self, thread_id: str, request_id: str, answers: dict) -> None:
+        """The same command T3's own window sends: each question's id, and the answer picked or typed."""
+        self._rpc("orchestration.dispatchCommand", {"type": "runtime-request.respond", "commandId": str(uuid.uuid4()),
+                                                    "threadId": thread_id, "requestId": request_id, "answers": answers})
+
     def stop_thread(self, thread_id: str) -> None:
         self._rpc("orchestration.dispatchCommand", {"type": "thread.stop", "commandId": str(uuid.uuid4()), "threadId": thread_id})
 

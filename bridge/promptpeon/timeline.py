@@ -8,7 +8,8 @@ import zlib
 from . import gametext, settings, threadstate
 
 
-RUNNING_STATES = {"running", "in_progress", "inProgress", "pending", "started", "streaming"}
+# "waiting" is an open question or approval. T3 sends it, not "running", while it waits on you.
+RUNNING_STATES = {"running", "in_progress", "inProgress", "pending", "started", "streaming", "waiting"}
 FAILED_STATES = {"failed", "error"}
 STOPPED_STATES = {"cancelled", "interrupted"}
 NOTICE_KINDS = {"notification", "system_notice", "compaction", "handoff", "run_interrupt_request", "run_interrupt_result"}
@@ -79,6 +80,46 @@ def question_text(item: dict) -> str:
     return "\n".join(part for part in parts if part)
 
 
+def question_choices(item: dict) -> dict | None:
+    """What the game needs to answer an open question itself: T3's request id, and each question
+    with its answers in T3's order. None when it has to be answered in T3: a question the game
+    can't show whole, or one that a normal reply answers."""
+    request, questions = item.get("requestId"), item.get("questions")
+    if not isinstance(request, str) or not request or item.get("responseMode") == "message":
+        return None
+    if not isinstance(questions, list) or not 0 < len(questions) <= settings.MAX_QUESTIONS:
+        return None
+    shown = []
+    for question in questions:
+        if not isinstance(question, dict) or not isinstance(question.get("id"), str) or not question["id"]:
+            return None
+        options = answer_options(question)
+        if len(options) > settings.MAX_ANSWER_OPTIONS:
+            return None
+        shown.append({
+            "h": gametext.readable(question.get("header") or "", 40),
+            "t": gametext.readable(question.get("question") or "", 400),
+            "m": question.get("multiSelect") is True,
+            # T3 takes a typed answer unless the question says it doesn't.
+            "c": question.get("allowCustomAnswer") is not False,
+            "o": [[gametext.readable(option["label"], 80), gametext.readable(option.get("description") or "", 200)] for option in options],
+        })
+    if not any(entry["o"] or entry["c"] for entry in shown):
+        return None
+    return {"r": request_mark(request), "q": shown}
+
+
+def request_mark(request_id: str) -> str:
+    """A short stand-in for T3's request id, which runs to hundreds of characters. The game sends
+    this back with its answer, and the companion app checks it against the question open now."""
+    return f"{zlib.crc32(request_id.encode('utf-8')):08x}"
+
+
+def answer_options(question: dict) -> list[dict]:
+    """A question's answers that can be picked, in T3's order. The game counts them from 1."""
+    return [option for option in question.get("options") or [] if isinstance(option, dict) and isinstance(option.get("label"), str) and option["label"].strip()]
+
+
 def build_timeline(items: list[dict]) -> list[list]:
     """The thread as T3 shows it, as rows of [kind, text, state, order].
 
@@ -109,8 +150,11 @@ def build_timeline(items: list[dict]) -> list[list]:
                 rows.append(["d", todo_text(item), state, order])
         elif kind == "user_input_request":
             question = question_text(item)
-            if question:
-                rows.append(["q", question, state, order] if state == "r" else ["n", f"Asked: {first_line(question)}", state, order])
+            if question and state == "r":
+                choices = question_choices(item)
+                rows.append(["q", question, state, order, choices] if choices else ["q", question, state, order])
+            elif question:
+                rows.append(["n", f"Asked: {first_line(question)}", state, order])
         elif kind == "checkpoint":
             files = item.get("files") or []
             if files:

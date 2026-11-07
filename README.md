@@ -14,7 +14,7 @@ For Classic Era, retail and WoW Forever. Free and open source.
 
 ![The Prompt Peon window. Threads are grouped by project on the left, each with a status mark. The open thread fills the right side, with spells and a Send button along the bottom.](docs/images/hero.jpg)
 
-**Real controls.** Reply, steer, start, stop, snooze and turn in. See what a thread changed in a colored diff, the subagents it sent out, and its pull requests with their CI. Approvals stay in T3.
+**Real controls.** Reply, answer an agent's questions, steer, start, stop, snooze and turn in. See what a thread changed in a colored diff, the subagents it sent out, and its pull requests with their CI. Approvals stay in T3.
 
 ![The snooze menu: For 1 hour, For 4 hours, Until tomorrow morning, Until Monday morning.](docs/images/snooze.png)
 

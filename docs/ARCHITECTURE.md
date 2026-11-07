@@ -128,10 +128,11 @@ A command is a message that starts with byte `0x01`, which no keyboard can type 
 | `new`, `newm` | Start a thread in the approval mode you picked | Yes |
 | `setmodel` | Pick model and effort for the next turn | Yes |
 | `steer`, `cancelq`, `editq` | Change a queued message | Yes |
+| `answer` | Answer the question an agent is waiting on: which answers you picked, counted from 1, or what you typed | Yes |
 | `diff`, `file`, `agents`, `older`, `view`, `pr` | Fetch something to read | No, they have their own limit of 60 a minute |
 | `hidden` | Tell the companion app what you hid | No |
 
-Everything is refused while an addon you haven't trusted is installed, because the game can't tell which addon sent it. Thread text stays out too: `publish` keeps only names and status on each row and adds `lk`, the plain sentence the game shows. The one exception is hiding more, which only takes things away. Replies, `steer`, `editq` and `setmodel` to an agent with full access are refused too, unless you said yes at install. So is `new` or `newm` in a mode that can act without asking: a mode you can't send to is a mode you can't start.
+Everything is refused while an addon you haven't trusted is installed, because the game can't tell which addon sent it. Thread text stays out too: `publish` keeps only names and status on each row and adds `lk`, the plain sentence the game shows. The one exception is hiding more, which only takes things away. Replies, `steer`, `editq`, `setmodel` and `answer` to an agent with full access are refused too, unless you said yes at install. So is `new` or `newm` in a mode that can act without asking: a mode you can't send to is a mode you can't start.
 
 Messages have sequence numbers for delivery. If a second WoW account lands on a number the first already used, each result carries a checksum of the thread and words it belongs to, so the addon sees it isn't theirs and sends again under a new number.
 
@@ -159,7 +160,7 @@ T3's remote API isn't public. `tests/check_t3_contract.py` asks a real T3 whethe
 - **Warned reloads, not an unlimited channel.** Research found no proven way to read unlimited fresh data inside the game. A sound-file flag could make reloads rarer, but it isn't proven and adds load to the game.
 - **1,000 helpers.** More helpers mean fewer reloads. The addon list and login were checked by hand at 1,096 and feel normal. All helpers sit under one collapsible heading.
 - **One T3 server per install.** T3 doesn't share threads between machines. Two servers in one companion app would be about 150 to 300 lines, and nobody has needed it yet.
-- **No approvals from the game.** Answering an agent's permission request stays in T3.
+- **No approvals from the game.** Answering an agent's permission request stays in T3. A question is different: it asks what you want, which a reply could say too, so the game answers those. The game only says which answers you picked, counted from 1, or what you typed. The companion app reads the open question from T3 again and sends T3's own words, so the game can't answer a question that changed or pick an answer that isn't offered.
 - **Addons share one Lua state.** Nothing inside the game can tell our code from another addon's, so every real check lives outside it, in the companion app. The addon's questions and limits protect you from mistakes, not from another addon. See [SECURITY.md](SECURITY.md).
 - **Small files, one package.** Every file does one job and says so at the top. Addon files stay flat in one folder, because the installer checks that folder against an exact list. A new addon file only loads after a full game restart, so the installer asks you to close the game.
 - **Standard library only.** No dependency to install, audit or keep updated, on either side of a double-click installer.

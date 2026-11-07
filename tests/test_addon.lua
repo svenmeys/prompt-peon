@@ -4410,5 +4410,102 @@ do
   check("a command was never words of yours", #ns.sentShowing == 0, #ns.sentShowing)
 end
 
+-- Answering an agent's question from the game, instead of only in T3.
+do
+  local MARK = "c664b892"
+  local function click(head) head.scripts.OnClick(head) end
+  local function lastPending() return PromptPeonDB.pending[#PromptPeonDB.pending] end
+  -- Its own row, because later tests reuse the name working for something else.
+  local function needing(extra)
+    local row = { id = THREAD, p = "Shop", t = "Busy", s = "running", u = time() }
+    for key, value in pairs(extra or {}) do row[key] = value end
+    return row
+  end
+  local function asking(questions, extra)
+    local row = needing({ s = "needs", a = "Waiting for your answer", uq = true,
+      m = { { "u", "pick one", "d", 1 }, { "q", "Which color?\n- Red\n- Blue", "r", 9, { r = MARK, q = questions } } } })
+    for key, value in pairs(extra or {}) do row[key] = value end
+    return row
+  end
+  local COLOR = { h = "Color", t = "Which color?", m = false, c = true, o = { { "Red", "Warm" }, { "Blue", "Cool" } } }
+  local EXTRAS = { h = "Extras", t = "Which extras?", m = true, c = false, o = { { "Wheels", "" }, { "Bell", "" }, { "Basket", "" } } }
+
+  ns.UI.answers, ns.UI.answerSent = {}, {}
+  show(asking({ COLOR }))
+  local shown = shownLines()
+  check("a question you can answer says to pick", shown:find("Pick your answer below", 1, true), shown)
+  check("each answer is a line you click", headWith("(  ) Red") and headWith("(  ) Blue") and headWith("Type your own answer"))
+  check("with what each one means", shown:find("Cool", 1, true), shown)
+  check("nothing to send before you pick", not headWith("Send your answer") and shown:find("Pick an answer, then send it", 1, true), shown)
+  local before = #PromptPeonDB.pending
+  click(headWith("(  ) Blue"))
+  check("picking marks it and offers to send", headWith("(o) Blue") and headWith("Send your answer"))
+  check("picking alone sends nothing", #PromptPeonDB.pending == before)
+  click(headWith("(  ) Red"))
+  check("a one-answer question swaps", headWith("(o) Red") and headWith("(  ) Blue"))
+  click(headWith("Send your answer"))
+  check("sending says which answer, counted from 1", lastPending().text == "\1answer\n" .. MARK .. "\no:1" and lastPending().command == "answer", lastPending().text)
+  check("and says it went", shownLines():find("Answer sent", 1, true) and not headWith("Send your answer"), shownLines())
+  drainSend()
+
+  -- Your own words.
+  ns.UI.answers, ns.UI.answerSent = {}, {}
+  show(asking({ COLOR }))
+  ns.UI.input.EditBox:SetText("a draft of mine")
+  ns.UI:SaveDraft()
+  click(headWith("Type your own answer"))
+  check("typing your own answer uses the box", ns.UI.answering and ns.UI.answering.question == 1 and ns.UI.input.EditBox:GetText() == "")
+  check("and says what it's for", ns.UI.hint.text:find("Your answer to: Which color?", 1, true) and ns.UI.notice.text:find("Enter sends your answer", 1, true), ns.UI.hint.text .. " / " .. ns.UI.notice.text)
+  local queuedBefore = #PromptPeonDB.pending
+  ns.UI.input.EditBox:SetText("")
+  ns.UI:Send()
+  check("an empty box goes back without sending", ns.UI.answering == nil and ns.UI.input.EditBox:GetText() == "a draft of mine" and #PromptPeonDB.pending == queuedBefore, #PromptPeonDB.pending)
+  click(headWith("Type your own answer"))
+  ns.UI.input.EditBox:SetText("Green,\nplease")
+  ns.UI:Send()
+  check("your own answer goes as one line", lastPending().text == "\1answer\n" .. MARK .. "\nt:Green, please", lastPending().text)
+  check("and your draft is still yours", ns.UI.input.EditBox:GetText() == "a draft of mine" and PromptPeonDB.drafts[THREAD] == "a draft of mine", ns.UI.input.EditBox:GetText())
+  drainSend()
+  PromptPeonDB.drafts[THREAD] = nil
+
+  -- Several questions, one of them with several answers.
+  ns.UI.answers, ns.UI.answerSent = {}, {}
+  show(asking({ COLOR, EXTRAS }))
+  check("each question has its heading", shownLines():find("Extras", 1, true) and headWith("[  ] Bell"))
+  local typedLines = 0
+  for _, head in ipairs(ns.UI.heads) do
+    if head.shown and head.text.text:find("Type your own", 1, true) then typedLines = typedLines + 1 end
+  end
+  check("and no typed answer where T3 takes none", typedLines == 1, typedLines)
+  click(headWith("(  ) Blue"))
+  click(headWith("[  ] Wheels"))
+  click(headWith("[  ] Basket"))
+  click(headWith("[  ] Bell"))
+  click(headWith("[x] Bell"))
+  check("ticks go on and off", headWith("[x] Wheels") and headWith("[  ] Bell") and headWith("[x] Basket"))
+  click(headWith("Send your answer"))
+  check("every question's answer goes", lastPending().text == "\1answer\n" .. MARK .. "\no:2\no:1,3", lastPending().text)
+  drainSend()
+
+  -- Shapes the game can't trust, and questions only T3 can answer, stay words.
+  ns.UI.answers, ns.UI.answerSent = {}, {}
+  show(needing({ s = "needs", a = "Waiting for your answer", uq = true, m = { { "q", "Which color?\n- Red\n- Blue", "r", 9, { r = "not hex!", q = { COLOR } } } } }))
+  shown = shownLines()
+  check("a bad shape shows the question as words", shown:find("- Blue", 1, true) and not headWith("(  ) Blue"), shown)
+  check("and says to answer it in T3", shown:find("Answer it in T3", 1, true), shown)
+  show(needing({ s = "needs", a = "Waiting for your answer", uq = true, m = { { "q", "Which color?\n- Red", "r", 9 } } }))
+  check("a question too big for the game says T3 too", shownLines():find("Answer it in T3", 1, true) and not headWith("Red"))
+
+  -- Answered somewhere else while you were typing.
+  ns.UI.answers, ns.UI.answerSent = {}, {}
+  show(asking({ COLOR }))
+  click(headWith("Type your own answer"))
+  ns.UI.input.EditBox:SetText("half an answer")
+  queuedBefore = #PromptPeonDB.pending
+  show(needing({ s = "running", m = { { "a", "Thanks, going on", "d", 10 } } }))
+  check("a question that went away ends typing", ns.UI.answering == nil and ns.UI.hint.text:find("Reply to", 1, true), ns.UI.hint.text)
+  check("and sends nothing", #PromptPeonDB.pending == queuedBefore, #PromptPeonDB.pending)
+end
+
 print(string.format("%d checks, %d failed", checks, failures))
 os.exit(failures == 0 and 0 or 1)

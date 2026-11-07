@@ -195,7 +195,7 @@ end
 function UI:SaveDraft()
   local thread = self.draftFor
   -- While editing, the box holds a queued message, not something you wrote for this thread.
-  if not thread or not self.input or self.editingQueued or self.newThread then return end
+  if not thread or not self.input or self.editingQueued or self.newThread or self.answering then return end
   local text = self.input.EditBox:GetText()
   ns.db.drafts[thread] = text ~= "" and text or nil
 end
@@ -273,6 +273,32 @@ function UI:Send()
     box:SetText("")
     self:StopNewThread()
     box:ClearFocus()
+    self:Render()
+    return
+  end
+  local answering = self.answering
+  if answering then
+    -- Your own answer to a question. It's one line, the way T3 takes it.
+    local text = ns.Typed(box:GetText()):gsub("[\r\n]+", " "):gsub("^%s+", ""):gsub("%s+$", "")
+    if text:find("\1", 1, true) then
+      self:SetNotice("That has a character in it that can't be sent.")
+      return
+    end
+    local thread = ns:ThreadById(answering.thread)
+    local choices = UI.OpenQuestion(thread)
+    if not choices or choices.r ~= answering.mark then
+      self:StopAnswering()
+      self:Render()
+      self:SetNotice("That question isn't open any more.")
+      return
+    end
+    local answer = self:AnswerFor(thread.id, choices)
+    -- Sending nothing is the way out, the same as when editing.
+    answer.typed[answering.question] = text ~= "" and text or nil
+    if text ~= "" then answer.picks[answering.question] = {} end
+    self:StopAnswering()
+    box:ClearFocus()
+    if text ~= "" and UI.AnswerReady(choices, answer) then self:SendAnswer(thread, choices) end
     self:Render()
     return
   end
