@@ -40,6 +40,8 @@ Do this on the game machine. For the T3 Connect route, do it on the T3 machine t
 
 There's nothing to do here. Make sure T3 is running, and go to [step 4](#4-run-the-installer). The installer finds T3 by itself.
 
+**Both.** If your threads are on another machine and T3 runs on the game machine too, connect with a link from the other machine as below. The installer then asks whether to show this machine's threads too. Say yes and both show in the log, with `(local)` after the names of this machine's projects. Replies, new threads and everything else go to the T3 the thread or project is on.
+
 ### T3 Connect
 
 The link has to be made on the machine your threads are on, not the one you play on. If that machine is a Mac or Linux box, the easy way is to ask an agent in a T3 thread there:
@@ -139,6 +141,7 @@ Done. Start the game, or restart it if it is open, and type /peon.
 | --- | --- |
 | `--pictures` or `--no-pictures` | Turn pictures on or off. Turning them on may ask for a new link |
 | `--full-access` or `--no-full-access` | Allow or stop sending to and starting agents with full access |
+| `--also-local` or `--no-also-local` | Show this machine's T3 threads next to the other machine's, or stop |
 | `--client era`, `--client retail` or `--client forever` | Add that client without being asked. To remove one, run the installer and untick it |
 | `--no-update` | Use the copy you ran, without asking GitHub for a newer one |
 | `--wow-dir "path"` | Use a WoW folder it can't find. The path ends in `_classic_era_`, `_retail_` or `_forever_` |

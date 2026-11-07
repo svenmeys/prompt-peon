@@ -159,7 +159,7 @@ T3's remote API isn't public. `tests/check_t3_contract.py` asks a real T3 whethe
 
 - **Warned reloads, not an unlimited channel.** Research found no proven way to read unlimited fresh data inside the game. A sound-file flag could make reloads rarer, but it isn't proven and adds load to the game.
 - **1,000 helpers.** More helpers mean fewer reloads. The addon list and login were checked by hand at 1,096 and feel normal. All helpers sit under one collapsible heading.
-- **One T3 server per install.** T3 doesn't share threads between machines. Two servers in one companion app would be about 150 to 300 lines, and nobody has needed it yet.
+- **Two T3s at once, at most what you set up.** T3 doesn't share threads between machines, so with your threads on one machine and T3 running on the game machine too, the installer offers to show both. `servers.ServerSet` makes them look like one: T3's ids are random, so no thread or project is on two servers, and each call goes to the server that listed it. Projects from the extra server carry its name, like `Shop (local)`. A server that stops answering keeps its last list, and the game says which one it is. With only one server nothing changes: it's a plain `T3Remote`.
 - **No approvals from the game.** Answering an agent's permission request stays in T3. A question is different: it asks what you want, which a reply could say too, so the game answers those. The game only says which answers you picked, counted from 1, or what you typed. The companion app reads the open question from T3 again and sends T3's own words, so the game can't answer a question that changed or pick an answer that isn't offered.
 - **Addons share one Lua state.** Nothing inside the game can tell our code from another addon's, so every real check lives outside it, in the companion app. The addon's questions and limits protect you from mistakes, not from another addon. See [SECURITY.md](SECURITY.md).
 - **Small files, one package.** Every file does one job and says so at the top. Addon files stay flat in one folder, because the installer checks that folder against an exact list. A new addon file only loads after a full game restart, so the installer asks you to close the game.
@@ -197,7 +197,7 @@ T3's remote API isn't public. `tests/check_t3_contract.py` asks a real T3 whethe
 | `luadata`, `gametext`, `safefiles` | Writing data as Lua, text the game can draw, file writes that never follow a link |
 | `pngtga`, `previews` | Pictures for the game |
 | `savedvars`, `frames` | Reading what the game wrote |
-| `websocket`, `t3errors`, `t3remote`, `catalog` | Talking to T3 |
+| `websocket`, `t3errors`, `t3remote`, `servers`, `catalog` | Talking to T3, and to two at once |
 | `threadstate`, `timeline`, `pullrequests`, `diffs`, `snapshots` | Turning what T3 says into what the game shows |
 | `bridgestate`, `gates`, `refreshing`, `publishing`, `commands`, `delivery`, `loop` | Running: state, the safety gates, one refresh, what each game command does, the main loop |
 | `processes`, `wowfolder`, `addonfiles`, `prompts`, `pairing`, `installer`, `uninstaller`, `autostart`, `updater`, `cli` | Installing, connecting, updating and removing |

@@ -6,7 +6,7 @@ import time
 import urllib.error
 import urllib.parse
 
-from . import catalog, console, gametext, publishing, settings, t3errors, threadstate
+from . import catalog, console, gametext, publishing, servers, settings, t3errors, threadstate
 
 
 def seconds_between(url: str) -> int:
@@ -45,6 +45,8 @@ def refresh(bridge) -> None:
                 try:
                     bridge.messages[thread["id"]] = bridge.remote.detail(thread["id"])
                     bridge.seen[thread["id"]] = stamp  # Only now, so a failure gets another try.
+                except servers.ServerDown:
+                    pass  # Its server didn't answer this round. What it showed before stays.
                 except urllib.error.HTTPError as error:
                     # One odd thread must not take the whole log down.
                     if error.code in (401, 403):
@@ -53,7 +55,11 @@ def refresh(bridge) -> None:
                 except (KeyError, TypeError, AttributeError, ValueError) as error:
                     console.log(f"no messages for {thread['id']}: {type(error).__name__}")
         bridge.shell = shell
-        bridge.error, bridge.error_since = "", 0
+        trouble = getattr(bridge.remote, "trouble", "")  # One of several T3s not answering.
+        if trouble:
+            bridge.note_failure(trouble)
+        else:
+            bridge.error, bridge.error_since = "", 0
         catalog.refresh_catalog(bridge)
     except urllib.error.HTTPError as error:
         bridge.shell = None

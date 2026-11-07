@@ -8,7 +8,7 @@ import urllib.error
 from pathlib import Path
 
 from . import (
-    autostart, bridgestate, delivery, installer, loop, pairing, processes, prompts, refreshing, settings, t3remote, threadstate,
+    autostart, bridgestate, delivery, installer, loop, pairing, processes, prompts, refreshing, servers, settings, threadstate,
     uninstaller, userconfig,
 )
 
@@ -32,6 +32,9 @@ def main() -> None:
     install.add_argument("--full-access", dest="full_access", action="store_true", default=None,
                          help="let the game send to, and start, agents that act without asking")
     install.add_argument("--no-full-access", dest="full_access", action="store_false", help="don't. This is the default")
+    install.add_argument("--also-local", dest="also_local", action="store_true", default=None,
+                         help="with your main T3 on another machine, show the threads of the T3 on this machine too")
+    install.add_argument("--no-also-local", dest="also_local", action="store_false", help="show only the main T3's threads")
     install.add_argument("--no-start", action="store_true", help="don't start the companion app or set it to start with this machine")
     install.add_argument("--allow-unencrypted", action="store_true", help="use a plain http address on a network without asking")
     install.add_argument("--no-update", action="store_true", help="use this copy, without asking GitHub for a newer one")
@@ -66,7 +69,7 @@ def main() -> None:
     config = userconfig.read_config()
     if not config.get("url"):
         sys.exit("Not set up yet. Run the installer first.")
-    remote = t3remote.T3Remote(config["url"], userconfig.read_token())
+    remote = servers.from_config(config)
     bridge = bridgestate.Bridge(Path(config["wow_dir"]), remote)
     bridge.addon_copy = settings.HOME_DIR / "addon" / settings.ADDON
     if args.command == "run":
@@ -90,6 +93,8 @@ def main() -> None:
         try:
             threads = threadstate.active_threads(remote.shell())
             print(f"Connected to {remote.url}. {len(threads)} open threads.")
+            for name, server in getattr(remote, "servers", [])[1:]:
+                print(f"Also {name} at {server.url}: {remote.down.get(name) or 'answering'}")
         except urllib.error.HTTPError as error:
             sys.exit(f"T3 answered {error.code}. Your link may have expired: run the installer again.")
         except (OSError, urllib.error.URLError) as error:

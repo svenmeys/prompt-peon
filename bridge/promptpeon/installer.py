@@ -80,6 +80,7 @@ def install(args) -> None:
         prompts.wait_for_game_to_close(wow_dir)
     screen.step(2, 4, "Connecting to T3")
     url = pairing.connect_to_t3(args.url, args.link, args.pictures, args.allow_unencrypted)
+    pairing.offer_this_machine(url, getattr(args, "also_local", None))
     screen.step(3, 4, "Your addons and agents")
     prompts.ask_about_other_addons(*wow_dirs)
     full_access = prompts.wants_full_access(args.full_access)

@@ -5,7 +5,7 @@ The small program that runs next to WoW and talks to T3 for the addon. This page
 ## In short
 
 - It's Python 3.14 or newer, standard library only, with nothing else to install.
-- It talks to the one T3 address you gave it, and to GitHub for one thing: while the game is open, it asks every 30 minutes whether a newer release exists, so the game can tell you. Nothing of yours goes with that, and it never downloads anything. Updating is still you running the installer. To stop that question, add `"update_check": false` to `config.json`. There's no telemetry and no other server. It ignores proxy settings and refuses redirects, so your token can't be sent somewhere else.
+- It talks to the T3 address you gave it, plus the T3 on this machine if you said yes to showing both, and to GitHub for one thing: while the game is open, it asks every 30 minutes whether a newer release exists, so the game can tell you. Nothing of yours goes with that, and it never downloads anything. Updating is still you running the installer. To stop that question, add `"update_check": false` to `config.json`. There's no telemetry and no other server. It ignores proxy settings and refuses redirects, so your token can't be sent somewhere else.
 - It only talks to T3 and GitHub while WoW is running.
 - When the game closes, it clears your thread text, drafts and unsent messages from the game folder. If T3 can't be reached, an unsent message gets two minutes to go first, and the next session tells you if it was lost.
 - While an addon you haven't trusted is installed, no thread text goes in the game folder at all.
@@ -28,7 +28,7 @@ macOS isn't supported.
 
 | Where | What | Sensitive? |
 | --- | --- | --- |
-| Config folder: `%APPDATA%\prompt-peon` or `~/.config/prompt-peon` | `token`, your access to T3. Owner-only on Linux. `config.json`: T3's address, the WoW folder, the addons you trust, whether pictures are on | **Yes.** Don't share this folder |
+| Config folder: `%APPDATA%\prompt-peon` or `~/.config/prompt-peon` | `token`, your access to T3, and `token-local` for the T3 on this machine if you show both. Owner-only on Linux. `config.json`: T3's address, the WoW folder, the addons you trust, whether pictures are on | **Yes.** Don't share this folder |
 | State folder: `%LOCALAPPDATA%\prompt-peon` or `~/.local/state/prompt-peon` | `state.json`: what's been sent and what you hid. `sent.log`: time, thread id, length and whether each send worked, never the words. It rolls over at 1 MB. `previews.json`, a lock file and a process id | Thread ids, project names you hid, picture paths and checksums of what you sent. Not your words |
 | Program folder: `%LOCALAPPDATA%\prompt-peon` or `~/.local/share/prompt-peon` | A copy of the companion app and the setup and removal scripts, so you can delete the download | No |
 | `Interface/AddOns/PromptPeon*` in the WoW folder | The addon, 1,096 helper addons and 64 picture files | `Snapshot.lua` holds thread text while the game runs, and any addon can read it |

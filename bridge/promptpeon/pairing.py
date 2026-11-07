@@ -259,3 +259,54 @@ def connect_to_t3(url: str | None, link: str | None, pictures: bool | None, allo
     safefiles.write_atomic(settings.CONFIG_DIR / "config.json", json.dumps(dict(userconfig.read_config(), url=target, pictures=allow_files), indent=2))
     screen.ok(f"Connected to T3 at {target}. {open_threads(count)}.")
     return target
+
+
+LOCAL_NAME = "local"  # What this machine's projects say after their names, next to the main T3's.
+
+
+def offer_this_machine(url: str, wanted: bool | None) -> None:
+    """T3 on this machine only shows this machine's threads. With your main T3 somewhere else, the
+    game can show both. Asked once; after that the answer stays until you run this with a flag."""
+    config = userconfig.read_config()
+    others = [entry for entry in config.get("also") or [] if entry.get("name") != LOCAL_NAME]
+    had_it = len(others) != len(config.get("also") or [])
+
+    def keep(also: list) -> None:
+        safefiles.write_atomic(settings.CONFIG_DIR / "config.json", json.dumps(dict(userconfig.read_config(), also=also), indent=2))
+
+    if url.rstrip("/") == settings.DEFAULT_URL.rstrip("/") or wanted is False:
+        # This machine is the main one now, or you said no, so it isn't an extra any more.
+        if had_it:
+            keep(others)
+            try:
+                userconfig.extra_token_path(LOCAL_NAME).unlink()
+            except OSError:
+                pass
+            if wanted is False:
+                screen.ok("This machine's threads don't show any more.")
+        return
+    if had_it and wanted is None:
+        screen.ok("Also showing this machine's threads, with (local) after their project names.")
+        return
+    if not (t3_program() and t3_answers(settings.DEFAULT_URL)):
+        if wanted:
+            screen.say("T3 isn't running on this machine, so only the threads from the other machine show. Start T3 here and run this again.")
+        return
+    if wanted is None:
+        if not sys.stdin.isatty():
+            return
+        screen.say(f"\nT3 also runs on this machine. Its threads can show next to the ones from {url}, with (local) after their project names.")
+        if not prompts.ask("Show this machine's threads too? [y/N]: ").lower().startswith("y"):
+            return
+    token = issue_local_token(settings.BASE_SCOPES + ([settings.PICTURE_SCOPE] if config.get("pictures") is True else []))
+    if not token:
+        screen.say("Couldn't get access to the T3 on this machine, so only the threads from the other machine show.")
+        return
+    try:
+        count = len(threadstate.active_threads(t3remote.T3Remote(settings.DEFAULT_URL, token).shell()))
+    except (urllib.error.HTTPError, OSError, ValueError) as error:
+        screen.say(f"Couldn't read the threads on this machine, so only the other machine's show: {error}")
+        return
+    userconfig.save_extra_token(LOCAL_NAME, token)
+    keep(others + [{"name": LOCAL_NAME, "url": settings.DEFAULT_URL}])
+    screen.ok(f"Also showing this machine's threads: {open_threads(count)}, with (local) after their project names.")
