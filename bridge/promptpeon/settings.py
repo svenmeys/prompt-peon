@@ -8,7 +8,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-VERSION = "0.36.0"
+VERSION = "0.37.0"
 ENTRY_POINT = "promptpeon_bridge.py"  # Installers, autostart, the service and stopping a running copy all know it by this name.
 PACKAGE = "promptpeon"  # This folder, which sits next to the entry point.
 PROGRAM_DIR = Path(__file__).resolve().parent.parent  # Where the entry point is: bridge/ in a download or an install.
