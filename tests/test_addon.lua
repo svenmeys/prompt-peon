@@ -4472,6 +4472,7 @@ do
   ns.UI.answers, ns.UI.answerSent = {}, {}
   show(asking({ COLOR, EXTRAS }))
   check("each question has its heading", shownLines():find("Extras", 1, true) and headWith("[  ] Bell"))
+  check("it says one send takes every answer", shownLines():find("Pick an answer for each question, then send them together", 1, true), shownLines())
   local typedLines = 0
   for _, head in ipairs(ns.UI.heads) do
     if head.shown and head.text.text:find("Type your own", 1, true) then typedLines = typedLines + 1 end
@@ -4483,8 +4484,20 @@ do
   click(headWith("[  ] Bell"))
   click(headWith("[x] Bell"))
   check("ticks go on and off", headWith("[x] Wheels") and headWith("[  ] Bell") and headWith("[x] Basket"))
-  click(headWith("Send your answer"))
+  check("one line sends both, and says so", headWith("Send both answers") and not headWith("Send your answer"))
+  click(headWith("Send both answers"))
   check("every question's answer goes", lastPending().text == "\1answer\n" .. MARK .. "\no:2\no:1,3", lastPending().text)
+  check("and says they all went", shownLines():find("Both answers sent", 1, true), shownLines())
+  drainSend()
+  ns.UI.answers, ns.UI.answerSent = {}, {}
+  local SIZE = { h = "Size", t = "Which size?", m = false, c = false, o = { { "Small", "" }, { "Large", "" } } }
+  show(asking({ COLOR, EXTRAS, SIZE }))
+  click(headWith("(  ) Red"))
+  click(headWith("[  ] Bell"))
+  click(headWith("(  ) Large"))
+  check("three questions say how many go", headWith("Send all 3 answers"))
+  click(headWith("Send all 3 answers"))
+  check("and all three went", lastPending().text == "\1answer\n" .. MARK .. "\no:1\no:2\no:2" and shownLines():find("All 3 answers sent", 1, true), lastPending().text)
   drainSend()
 
   -- Shapes the game can't trust, and questions only T3 can answer, stay words.

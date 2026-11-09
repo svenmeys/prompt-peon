@@ -410,13 +410,17 @@ function UI:RenderDetail(thread)
           end
           canvas.y = canvas.y + 4
         end
+        -- One Send takes every question's answer, so with several it says so.
+        local count = #choices.q
         local sent = self.answerSent[choices.r]
         if sent and GetTime() - sent < STEER_SHOWS_FOR then
-          add("Answer sent. The agent goes on when T3 has it.", 0.62, 0.60, 0.54, "PromptPeonSmall")
+          add((count == 1 and "Answer sent" or count == 2 and "Both answers sent" or "All " .. count .. " answers sent")
+            .. ". The agent goes on when T3 has " .. (count == 1 and "it." or "them."), 0.62, 0.60, 0.54, "PromptPeonSmall")
         elseif UI.AnswerReady(choices, answer) then
-          choiceLine(">> Send your answer", true, function() UI:SendAnswer(thread, choices) end)
+          choiceLine(count == 1 and ">> Send your answer" or count == 2 and ">> Send both answers" or ">> Send all " .. count .. " answers",
+            true, function() UI:SendAnswer(thread, choices) end)
         else
-          add(#choices.q > 1 and "Pick an answer for each question, then send it." or "Pick an answer, then send it.", 0.62, 0.60, 0.54, "PromptPeonSmall")
+          add(count > 1 and "Pick an answer for each question, then send them together." or "Pick an answer, then send it.", 0.62, 0.60, 0.54, "PromptPeonSmall")
         end
       end
       canvas.y = canvas.y + 8
