@@ -29,6 +29,25 @@ def ask_about_other_addons(*wow_dirs: Path) -> None:
         safefiles.write_atomic(settings.CONFIG_DIR / "config.json", json.dumps(dict(config, trusted_addons=trusted + others), indent=2))
 
 
+def trust_addons(names: list[str]) -> str:
+    """trust: what an agent that built you an addon runs, so Prompt Peon keeps sending with it there."""
+    config = userconfig.read_config()
+    wow_dirs = [Path(folder) for folder in dict.fromkeys([*(config.get("wow_dirs") or []), config.get("wow_dir")]) if folder]
+    if not wow_dirs:
+        sys.exit("Not set up yet. Run the installer first.")
+    for name in names:
+        # The exact folder name, never a path: only an addon that is really there can be trusted.
+        if not name or name in (".", "..") or Path(name).name != name \
+                or not any((wow_dir / "Interface/AddOns" / name).is_dir() for wow_dir in wow_dirs):
+            sys.exit(f"No addon called {name} in your WoW AddOns folder, so nothing changed. Use its folder name, exactly.")
+    trusted = list(config.get("trusted_addons") or [])
+    added = [name for name in dict.fromkeys(names) if name not in trusted]
+    if added:
+        settings.CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        safefiles.write_atomic(settings.CONFIG_DIR / "config.json", json.dumps(dict(config, trusted_addons=trusted + added), indent=2))
+    return f"Trusted {', '.join(dict.fromkeys(names))}. Thread text and sending come back in the game on the next refresh, with no restart."
+
+
 def ask(prompt: str) -> str:
     try:
         return input(screen.question(prompt)).strip()

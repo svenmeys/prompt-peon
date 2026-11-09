@@ -189,7 +189,7 @@ class Commands(Base):
                         {"seq": 4, "thread": THREAD, "text": "hello"}])
         for seq in "1234":
             self.assertIn("SomeoneElse", bridge.state["results"][seq])
-            self.assertIn("installer", bridge.state["results"][seq])
+            self.assertIn("trust SomeoneElse", bridge.state["results"][seq], "it says how to trust it")
         self.assertEqual(remote.calls, [])
         self.assertEqual(remote.sent, [])
 
