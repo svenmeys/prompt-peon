@@ -7,6 +7,45 @@ local UI = ns.UI
 local showFold = UI.ShowFold
 
 local MAX_TABLE_ROWS, MAX_TABLE_COLUMNS, MAX_TABLE_CELL = 40, 8, 300
+local WIDEST_EXPANDED_COLUMN = 480 -- Past this a cell wraps, so one long cell can't make a table thousands wide.
+local SLIDER_HEIGHT = 17
+local SIDEWAYS_STEP = 40
+
+UI.tableOffsets = {} -- How far you scrolled each expanded table, by its key.
+
+--- The strip an expanded table scrolls sideways in, with its bar. It clips what's outside it.
+function UI:TableScroller(index)
+  self.tableScrollers = self.tableScrollers or {}
+  local scroller = self.tableScrollers[index]
+  if scroller then return scroller end
+  scroller = CreateFrame("ScrollFrame", nil, self.detailContent)
+  local content = CreateFrame("Frame", nil, scroller)
+  content:SetSize(10, 10)
+  scroller:SetScrollChild(content)
+  -- Thread links in a cell still work, the same way they do in the log.
+  content:SetHyperlinksEnabled(true)
+  content:SetScript("OnHyperlinkClick", function(_, link, _, button) ns.Chat:OnLink(link, button) end)
+  scroller.content, scroller.lines, scroller.bars, scroller.offset = content, {}, {}, 0
+  local slider = CreateFrame("Slider", nil, self.detailContent, "UISliderTemplate")
+  slider:SetScript("OnValueChanged", function(_, value)
+    scroller.offset = value
+    scroller:SetHorizontalScroll(value)
+    if scroller.key then UI.tableOffsets[scroller.key] = value end
+  end)
+  scroller.slider = slider
+  -- Shift and the wheel scroll it sideways. The wheel alone still scrolls the thread.
+  scroller:SetScript("OnMouseWheel", function(_, delta)
+    if IsShiftKeyDown() then
+      slider:SetValue(scroller.offset - delta * SIDEWAYS_STEP)
+    else
+      local outer = UI.detailScroll
+      local scroll = outer:GetScript("OnMouseWheel")
+      if scroll then scroll(outer, delta) end
+    end
+  end)
+  self.tableScrollers[index] = scroller
+  return scroller
+end
 
 --- One per redraw. The page functions decide what goes on it.
 function UI:NewCanvas(width)
@@ -44,8 +83,56 @@ function UI:NewCanvas(width)
     texture:Show()
   end
   local BODY_R, BODY_G, BODY_B = 0.88, 0.86, 0.79
+
+  local function foldingHead(key, words, right, noFold, onClick, x)
+    canvas.heads = canvas.heads + 1
+    local head = self:GroupHead(canvas.heads)
+    head.key, head.open = key, self.groups[key] == true
+    head.onClick = onClick
+    if noFold then showFold(head, nil) else showFold(head, head.open) end
+    head:ClearAllPoints()
+    head:SetPoint("TOPLEFT", self.detailContent, "TOPLEFT", x or 0, -canvas.y)
+    head:SetSize(width - 4 - (x or 0), 14)
+    head.text:SetText(words)
+    head.right:SetText(right or "")
+    head:Show()
+    canvas.y = canvas.y + 17
+    return head.open
+  end
+
+  --- Every row in order, at `y` counted from the table's top. `put` draws one cell and says how
+  --- tall it is; `stripe` draws the header rule and every other row's shading.
+  local function drawCells(rows, columns, widths, stripeWidth, put, stripe)
+    local y = 0
+    for rowIndex, row in ipairs(rows) do
+      local x, tallest, top = 4, 0, y
+      for column = 1, columns do
+        local words = ns.Markdown.Inline(row[column] or "")
+        local height
+        if rowIndex == 1 then
+          height = put(words, 1.0, 0.82, 0.0, x, top, widths[column] - 8)
+        else
+          height = put(words, BODY_R, BODY_G, BODY_B, x, top, widths[column] - 8)
+        end
+        tallest = math.max(tallest, height)
+        x = x + widths[column]
+      end
+      y = top + tallest + 4
+      if rowIndex == 1 then
+        stripe(0, y - 2, stripeWidth, 1, 0.6, 0.55, 0.35, 0.8)
+        y = y + 1
+      elseif rowIndex % 2 == 1 then
+        stripe(0, top - 1, stripeWidth, tallest + 3, 1, 1, 1, 0.04)
+      end
+    end
+    return y
+  end
+
+  local scrollers = 0
   --- Bounded, because every row costs every column: a tiny hostile table could mean 40,000 text blocks.
-  local function drawTable(allRows)
+  --- Squeezed to the window until you expand it. Expanded, each column is as wide as its longest
+  --- cell, and a table wider than the window scrolls sideways inside its own strip.
+  local function drawTable(allRows, key)
     local rows = {}
     for index = 1, math.min(#allRows, MAX_TABLE_ROWS) do
       local cells = {}
@@ -60,6 +147,7 @@ function UI:NewCanvas(width)
       self.measure = self.detailContent:CreateFontString(nil, "OVERLAY", "PromptPeonBody")
       self.measure:Hide()
     end
+    local expanded = self.groups[key] == true
     -- Wide enough for the longest cell, shared out if the table is wider than the window.
     local widths, total = {}, 0
     for column = 1, columns do
@@ -68,41 +156,98 @@ function UI:NewCanvas(width)
         self.measure:SetText(ns.Markdown.Inline(row[column] or ""))
         widest = math.max(widest, (self.measure:GetStringWidth() or 0) + 12)
       end
-      widths[column] = widest
-      total = total + widest
+      widths[column] = math.min(widest, WIDEST_EXPANDED_COLUMN)
+      total = total + widths[column]
     end
     local room = width - 8
-    if total > room then
-      for column = 1, columns do widths[column] = math.max(40, widths[column] * room / total) end
-    end
     canvas.y = canvas.y + 2
-    for rowIndex, row in ipairs(rows) do
-      local x, tallest, top = 4, 0, canvas.y
-      for column = 1, columns do
-        local words = ns.Markdown.Inline(row[column] or "")
-        local height
-        if rowIndex == 1 then
-          height = add(words, 1.0, 0.82, 0.0, "PromptPeonBody", x, widths[column] - 8, true)
-        else
-          height = add(words, BODY_R, BODY_G, BODY_B, "PromptPeonBody", x, widths[column] - 8, true)
+    local sideways = expanded and total > room
+    if sideways then
+      scrollers = scrollers + 1
+      local scroller = self:TableScroller(scrollers)
+      local used = 0
+      local function put(words, r, g, b, x, y, cellWidth)
+        used = used + 1
+        local line = scroller.lines[used]
+        if not line then
+          line = scroller.content:CreateFontString(nil, "OVERLAY", "PromptPeonBody")
+          line:SetJustifyH("LEFT")
+          line:SetJustifyV("TOP")
+          line:SetWordWrap(true)
+          scroller.lines[used] = line
         end
-        tallest = math.max(tallest, height)
-        x = x + widths[column]
+        line:ClearAllPoints()
+        line:SetPoint("TOPLEFT", scroller.content, "TOPLEFT", x, -y)
+        line:SetWidth(cellWidth)
+        line:SetText(words)
+        line:SetTextColor(r, g, b)
+        line:Show()
+        return line:GetStringHeight()
       end
-      canvas.y = top + tallest + 4
-      if rowIndex == 1 then
-        bar(0, canvas.y - 2, math.min(total, room) + 4, 1, 0.6, 0.55, 0.35, 0.8)
-        canvas.y = canvas.y + 1
-      elseif rowIndex % 2 == 1 then
-        bar(0, top - 1, math.min(total, room) + 4, tallest + 3, 1, 1, 1, 0.04)
+      local stripes = 0
+      local function stripe(x, y, stripeWidth, height, r, g, b, a)
+        stripes = stripes + 1
+        local texture = scroller.bars[stripes]
+        if not texture then
+          texture = scroller.content:CreateTexture(nil, "BACKGROUND")
+          scroller.bars[stripes] = texture
+        end
+        texture:ClearAllPoints()
+        texture:SetPoint("TOPLEFT", scroller.content, "TOPLEFT", x, -y)
+        texture:SetSize(stripeWidth, height)
+        texture:SetColorTexture(r, g, b, a)
+        texture:Show()
       end
+      for index = 1, #scroller.lines do scroller.lines[index]:Hide() end
+      for index = 1, #scroller.bars do scroller.bars[index]:Hide() end
+      local height = drawCells(rows, columns, widths, total + 4, put, stripe)
+      local inner, view = total + 8, room + 4
+      scroller:ClearAllPoints()
+      scroller:SetPoint("TOPLEFT", self.detailContent, "TOPLEFT", 0, -canvas.y)
+      scroller:SetSize(view, height)
+      scroller.content:SetSize(inner, height)
+      scroller:Show()
+      canvas.y = canvas.y + height + 2
+      -- Where you scrolled to stays put while the thread refreshes.
+      local range = inner - view
+      local offset = math.max(0, math.min(self.tableOffsets[key] or 0, range))
+      scroller.key, scroller.offset = key, offset
+      scroller:SetHorizontalScroll(offset)
+      local slider = scroller.slider
+      slider:ClearAllPoints()
+      slider:SetPoint("TOPLEFT", self.detailContent, "TOPLEFT", 4, -canvas.y)
+      slider:SetSize(view - 8, SLIDER_HEIGHT)
+      slider:SetMinMaxValues(0, range)
+      slider:SetValue(offset)
+      slider:Show()
+      canvas.y = canvas.y + SLIDER_HEIGHT + 2
+    else
+      if total > room then
+        local fitted = 0
+        for column = 1, columns do
+          widths[column] = math.max(40, widths[column] * room / total)
+          fitted = fitted + widths[column]
+        end
+        total = fitted
+      end
+      local base = canvas.y
+      local function put(words, r, g, b, x, y, cellWidth)
+        canvas.y = base + y
+        return add(words, r, g, b, "PromptPeonBody", x, cellWidth, true)
+      end
+      local function stripe(x, y, stripeWidth, height, r, g, b, a) bar(x, base + y, stripeWidth, height, r, g, b, a) end
+      canvas.y = base + drawCells(rows, columns, widths, math.min(total, room) + 4, put, stripe)
     end
     if #allRows > MAX_TABLE_ROWS then
       add((#allRows - MAX_TABLE_ROWS) .. " more rows in T3.", 0.70, 0.68, 0.60, "PromptPeonSmall", 4)
     end
+    foldingHead(key, expanded and "|cffffd100Collapse table|r" or "|cffffd100Expand table|r",
+      sideways and "|cff888888Drag the bar, or hold Shift and scroll|r" or "", true, nil, 4)
     canvas.y = canvas.y + 4
   end
-  local function drawMarkdown(text)
+  --- `key` names the message, so each of its tables remembers whether you expanded it.
+  local function drawMarkdown(text, key)
+    local tables = 0
     for _, block in ipairs(ns.Markdown.Blocks(text)) do
       if block.kind == "h" then
         canvas.y = canvas.y + 3
@@ -138,7 +283,9 @@ function UI:NewCanvas(width)
         bar(0, canvas.y, width - 4, 1, 0.6, 0.6, 0.6, 0.35)
         canvas.y = canvas.y + 6
       elseif block.kind == "table" then
-        drawTable(block.rows)
+        tables = tables + 1
+        -- A page without a message key goes by the table's header instead.
+        drawTable(block.rows, "table:" .. (key or table.concat(block.rows[1] or {}, "|")) .. ":" .. tables)
       else
         for _, chunk in ipairs(ns.Chunks(block.text)) do
           add(ns.Markdown.Inline(chunk), BODY_R, BODY_G, BODY_B)
@@ -149,22 +296,6 @@ function UI:NewCanvas(width)
   end
   local function addChunks(text, r, g, b, font)
     for _, chunk in ipairs(ns.Chunks(text)) do add(ns.Plain(chunk), r, g, b, font) end
-  end
-
-  local function foldingHead(key, words, right, noFold, onClick)
-    canvas.heads = canvas.heads + 1
-    local head = self:GroupHead(canvas.heads)
-    head.key, head.open = key, self.groups[key] == true
-    head.onClick = onClick
-    if noFold then showFold(head, nil) else showFold(head, head.open) end
-    head:ClearAllPoints()
-    head:SetPoint("TOPLEFT", self.detailContent, "TOPLEFT", 0, -canvas.y)
-    head:SetSize(width - 4, 14)
-    head.text:SetText(words)
-    head.right:SetText(right or "")
-    head:Show()
-    canvas.y = canvas.y + 17
-    return head.open
   end
 
   canvas.add, canvas.addChunks, canvas.bar = add, addChunks, bar

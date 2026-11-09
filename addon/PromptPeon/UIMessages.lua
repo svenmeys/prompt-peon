@@ -141,6 +141,10 @@ function UI:RenderDetail(thread)
   for _, head in ipairs(self.heads) do head:Hide() end
   for _, bar in ipairs(self.bars or {}) do bar:Hide() end
   for _, pic in ipairs(self.pictures or {}) do pic:Hide() end
+  for _, scroller in ipairs(self.tableScrollers or {}) do
+    scroller:Hide()
+    scroller.slider:Hide()
+  end
   for _, button in ipairs(self.queueButtons or {}) do button:Hide() end
   if self.optionsPage then self.optionsPage:Hide() end
 
@@ -365,7 +369,7 @@ function UI:RenderDetail(thread)
       head.text:SetText(string.format("|cff%02x%02x%02xAgent: %s (%s)|r", style.r * 255, style.g * 255, style.b * 255, ns.Plain(row[2]), words))
       head:Show()
       canvas.y = canvas.y + 17
-      if isOpen and row[5] then drawMarkdown(row[5]) end
+      if isOpen and row[5] then drawMarkdown(row[5], key) end
       canvas.y = canvas.y + 4
       lastRole = nil
       position = position + 1
@@ -476,7 +480,7 @@ function UI:RenderDetail(thread)
           x = x + 19
         end
       elseif row[1] == "a" then
-        drawMarkdown(row[2])
+        drawMarkdown(row[2], thread.id .. ":" .. tostring(row[4] or position))
       else
         addChunks(row[2], queued and 0.75 or 0.95, queued and 0.73 or 0.93, queued and 0.65 or 0.85)
       end

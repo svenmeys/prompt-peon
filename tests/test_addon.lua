@@ -909,6 +909,66 @@ check("a table wider than the window still fits", (function()
   end
   return true
 end)())
+
+-- Expanding a table: its columns get the room they need, and it scrolls sideways when that is
+-- wider than the window. Collapsing squeezes it back. All live, without a reload.
+local function tableHead(words)
+  for _, head in ipairs(ns.UI.heads) do
+    if head.shown and tostring(head.text.text):find(words, 1, true) then return head end
+  end
+end
+local function shownScroller()
+  for _, scroller in ipairs(ns.UI.tableScrollers or {}) do
+    if scroller.shown then return scroller end
+  end
+end
+local reloadsBefore = stub.reloads
+local expand = tableHead("Expand table")
+check("a table has an expand control under it", expand ~= nil)
+check("it sits below the table's last row", expand and expand.lastPoint and lineWith("wider") and -expand.lastPoint[5] > -lineWith("wider").lastPoint[5],
+  expand and expand.lastPoint and expand.lastPoint[5])
+check("a squeezed table does not scroll sideways", shownScroller() == nil)
+if expand then expand.scripts.OnClick(expand) end
+local scroller = shownScroller()
+check("expanded, a wide table scrolls sideways", scroller ~= nil)
+check("its columns keep their own width, wider than the window",
+  scroller and scroller.content.width > ns.UI.detailScroll:GetWidth(), scroller and scroller.content.width)
+check("its cells are drawn inside the scrolling part", scroller and scroller.lines and scroller.lines[1] and scroller.lines[1].shown
+  and tostring(scroller.lines[1].text):find("a", 1, true))
+check("the window itself does not get wider", (function()
+  for _, line in ipairs(ns.UI.lines) do
+    if line.shown and line.width > ns.UI.detailScroll:GetWidth() then return false end
+  end
+  return true
+end)())
+check("a bar under it scrolls it", scroller and scroller.slider and scroller.slider.shown)
+if scroller and scroller.slider then
+  scroller.slider.scripts.OnValueChanged(scroller.slider, 120)
+end
+check("moving the bar moves the table", scroller and scroller.offset == 120, scroller and scroller.offset)
+check("the control now collapses it", tableHead("Collapse table") ~= nil and tableHead("Expand table") == nil)
+stub.now = stub.now + 100
+stub.slotData = snapshot({ ack = PromptPeonDB.nextSeq - 1, at = mdStamp + 2.5, threads = { { id = THREAD, p = "Shop", t = "Wide", s = "done", u = time(), m = { { "a", longTable, "d", 1 } } } } })
+ns:RefreshAndRender()
+check("it stays expanded when the thread refreshes", shownScroller() ~= nil and tableHead("Collapse table") ~= nil)
+check("and keeps where you scrolled to", shownScroller() and shownScroller().offset == 120, shownScroller() and shownScroller().offset)
+local collapse = tableHead("Collapse table")
+if collapse then collapse.scripts.OnClick(collapse) end
+check("collapsed, it fits the window again", shownScroller() == nil and tableHead("Expand table") ~= nil and lineWith("wider")
+  and lineWith("wider").width <= ns.UI.detailScroll:GetWidth())
+check("expanding and collapsing never needs a reload", stub.reloads == reloadsBefore and not ns:NeedsReload())
+
+local narrowTable = "| a | b |\n|---|---|\n| 1 | 2 |"
+stub.now = stub.now + 100
+stub.slotData = snapshot({ ack = PromptPeonDB.nextSeq - 1, at = mdStamp + 2.7, threads = { { id = THREAD, p = "Shop", t = "Narrow", s = "done", u = time(), m = { { "a", narrowTable, "d", 1 } } } } })
+ns:RefreshAndRender()
+local narrowExpand = tableHead("Expand table")
+check("a narrow table has the control too", narrowExpand ~= nil)
+if narrowExpand then narrowExpand.scripts.OnClick(narrowExpand) end
+check("expanded, a table that fits does not scroll sideways", shownScroller() == nil and tableHead("Collapse table") ~= nil and lineWith("2"))
+local collapseNarrow = tableHead("Collapse table")
+if collapseNarrow then collapseNarrow.scripts.OnClick(collapseNarrow) end
+
 stub.now = stub.now + 100
 stub.slotData = snapshot({ ack = PromptPeonDB.nextSeq - 1, at = mdStamp + 3 })
 ns:RefreshAndRender()
