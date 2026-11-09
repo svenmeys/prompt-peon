@@ -32,6 +32,7 @@ local function makeFrame(kind)
   frame.SetHyperlinksEnabled = function(self, on) self.hyperlinks = on end
   frame.SetPoint = function(self, ...) self.lastPoint = { ... } end
   frame.SetChecked = function(self, on) self.checked = on end
+  frame.SetClampRectInsets = function(self, ...) self.clampInsets = { ... } end
   frame.GetChecked = function(self) return self.checked end
   frame.SetDesaturated = function(self, on) self.desaturated = on end
   frame.SetFontObject = function(self, font) self.fontObject = font end

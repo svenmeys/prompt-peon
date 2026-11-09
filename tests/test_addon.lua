@@ -2793,6 +2793,60 @@ do local function parkedAndMarks()
     UI3:Render()
   end
 
+  -- The pages hang off the window's right edge as tabs, like the spellbook's. Only the dice stay up by the close button.
+  do
+    local tabs = UI3.sideTabs or {}
+    check("the side tabs come in order", #tabs == 3 and tabs[1] == UI3.reportIcon and tabs[2] == UI3.achievementsIcon
+      and tabs[3] == UI3.options, #tabs)
+    local offEdge = #tabs > 0
+    for _, tab in ipairs(tabs) do
+      local point = tab.lastPoint or {}
+      offEdge = offEdge and point[1] == "TOPLEFT" and point[2] == UI3.frame and point[3] == "TOPRIGHT"
+    end
+    check("each one sits off the right edge, none in the title bar", offEdge)
+    local pitchOk = #tabs == 3
+    for index = 2, #tabs do
+      pitchOk = pitchOk and tabs[index - 1].lastPoint[5] - tabs[index].lastPoint[5] >= 49
+    end
+    check("far enough apart that the tab art doesn't overlap", pitchOk)
+    check("the dice stay in the title bar", UI3.greedIcon.lastPoint and UI3.greedIcon.lastPoint[2] == UI3.frame and UI3.greedIcon.lastPoint[1] == "TOPRIGHT"
+      and UI3.needIcon.lastPoint and UI3.needIcon.lastPoint[2] == UI3.greedIcon)
+    check("they're tabs you can see pressed", UI3.options.kind == "CheckButton" and UI3.achievementsIcon.kind == "CheckButton")
+    local reloads = stub.reloads
+    UI3.options.scripts.OnClick(UI3.options)
+    check("the options tab opens Options and stays pressed", UI3.showOptions == true and UI3.options:GetChecked() == true)
+    UI3.achievementsIcon.scripts.OnClick(UI3.achievementsIcon)
+    check("another tab switches the page straight away", UI3.showAchievements == true and not UI3.showOptions
+      and UI3.achievementsIcon:GetChecked() == true and UI3.options:GetChecked() == false)
+    UI3.achievementsIcon.scripts.OnClick(UI3.achievementsIcon)
+    check("pressing the open tab again closes its page", not UI3.showAchievements and UI3.achievementsIcon:GetChecked() == false)
+    check("switching never asks for a reload", stub.reloads == reloads, stub.reloads)
+
+    -- The smallest window still has room for every tab beside it, and the screen edge can't swallow them.
+    local window = UI3.frame
+    local widthWas, heightWas = window:GetSize()
+    window:SetSize(300, 240)
+    window.scripts.OnSizeChanged(window)
+    UI3:Render()
+    local lowest = 0
+    for _, tab in ipairs(tabs) do
+      if tab.shown then lowest = math.max(lowest, -tab.lastPoint[5] + tab.height + 13) end -- The art hangs 13 below the button.
+    end
+    check("every tab fits beside the smallest window", lowest > 0 and lowest <= 240, lowest)
+    check("the window keeps its tabs on screen", window.clampInsets and window.clampInsets[2] >= 32)
+    window:SetSize(widthWas, heightWas)
+    window.scripts.OnSizeChanged(window)
+
+    -- Without the game files there's no report or achievements, and Options moves up into the gap.
+    local game = ns.Game
+    ns.Game = nil
+    UI3:Render()
+    check("without the game files their tabs go", not UI3.reportIcon.shown and not UI3.achievementsIcon.shown)
+    check("and Options takes the top", UI3.options.lastPoint and UI3.options.lastPoint[5] == UI3.sideTabTop, UI3.options.lastPoint and UI3.options.lastPoint[5])
+    ns.Game = game
+    UI3:Render()
+  end
+
   -- A thread's linked pull requests.
   do
     local PR_THREAD = "15151515-0000-0000-0000-000000000015"

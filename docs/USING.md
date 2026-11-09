@@ -49,7 +49,7 @@ The icons, from the left: Changes, Agents, Hide, Snooze, Track, Stop. Turn in ta
 - While CI is failing on a thread's open PR, Sunder the Build joins the spell bar. It tells the agent to read the real logs and fix the cause.
 
 ![The spell bar along the bottom of the log, with the pointer on Polymorph. Its tooltip says: Instant cast. Sends the open thread: Look at what you added. Remove anything the goal doesn't need and simplify what's left, without changing behavior.](images/spell-bar.png)
-- Come out of a dungeon, log back in or reopen the log after a while, and it tells you what your agents did. The letter icon by the cogwheel brings that report back, and lights up when there's a new one.
+- Come out of a dungeon, log back in or reopen the log after a while, and it tells you what your agents did. The letter tab on the right side of the log brings that report back, and lights up when there's a new one.
 - There are achievements, behind the seal icon beside it.
 
 ## Tracking and hiding
