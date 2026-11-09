@@ -3049,7 +3049,7 @@ do local function parkedAndMarks()
     Chat:News("No room for a tab")
     check("with every tab taken it falls back on your main chat", #stub.chat == inMain + 1)
     FCF_OpenNewWindow, FCF_GetChatWindowInfo, FCF_GetChatFrameByID, FCFDock_GetSelectedWindow, FCF_SelectDockFrame, GENERAL_CHAT_DOCK = unpack(saved, 1, 6)
-    check("options has both switches", ns.UI.optionsPage == nil or (ns.UI.optionsPage.checks.chatNews and ns.UI.optionsPage.checks.chatTab))
+    check("options has both switches", ns.UI.optionsPage and ns.UI.optionsPage.checks.chatNews and ns.UI.optionsPage.checks.chatTab)
   end
 
   -- No threads at all, which is what a new install on an empty T3 looks like.
