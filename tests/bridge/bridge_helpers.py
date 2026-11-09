@@ -5,6 +5,7 @@ import sys
 import tempfile
 import unittest
 import urllib.error
+from unittest import mock
 import zlib
 from pathlib import Path
 
@@ -12,7 +13,7 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT / "bridge"))
 if sys.version_info < (3, 14):
     sys.exit("These tests need Python 3.14 or newer, the same as the installer. Try: python3.14 tests/test_bridge.py")
-from promptpeon import bridgestate, diffs, frames, pngtga, settings, timeline  # noqa: E402
+from promptpeon import bridgestate, diffs, frames, pairing, pngtga, settings, timeline  # noqa: E402
 
 
 THREAD = "1f7743e2-3c60-4348-88a5-7b9f3d6c00b0"
@@ -85,6 +86,11 @@ class Base(unittest.TestCase):
         self.dir = Path(self.tmp.name)
         self.wow = self.dir / "_forever_"
         (self.wow / "Interface/AddOns/PromptPeon").mkdir(parents=True)
+        # On a machine with T3, the real t3 would hand out a real token that lasts a year, once per
+        # test that runs the installer. A test that wants t3 on the machine fakes it itself.
+        patcher = mock.patch.object(pairing, "t3_program", return_value=None)
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
     def tearDown(self):
         self.tmp.cleanup()
