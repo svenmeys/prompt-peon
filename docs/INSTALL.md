@@ -131,7 +131,7 @@ Done. Start the game, or restart it if it is open, and type /peon.
 
 ## 6. Change your mind later
 
-**In the game,** the cogwheel on the log opens Options, with settings such as the thread list, quest tracker, party frames, chat news, text size and refresh speed. News such as finished threads and loot goes in its own `Peon` chat tab, which you can move to your main chat or turn off there.
+**In the game,** the cogwheel tab on the right side of the log opens Options, with settings such as the thread list, quest tracker, party frames, chat news, text size and refresh speed. News such as finished threads and loot goes in its own `Peon` chat tab, which you can move to your main chat or turn off there.
 
 **To connect to a different T3,** double-click the installer again and paste a link from there. Pressing Enter keeps the one you have. The installer keeps a copy of itself in `%LOCALAPPDATA%\prompt-peon` on Windows, or `~/.local/share/prompt-peon` on Linux, so you don't need the download.
 

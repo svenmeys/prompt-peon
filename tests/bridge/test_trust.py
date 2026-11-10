@@ -11,7 +11,7 @@ import unittest
 from unittest import mock
 
 from bridge_helpers import Base, FakeRemote, ROOT, THREAD, outbox, thread
-from promptpeon import addonfiles, bridgestate, delivery, prompts, publishing, refreshing, savedvars, settings, t3errors
+from promptpeon import addonfiles, bridgestate, cli, delivery, gates, prompts, publishing, refreshing, savedvars, settings, t3errors
 
 
 class ThreadTextNeedsTrust(Base):
@@ -48,7 +48,8 @@ class ThreadTextNeedsTrust(Base):
         self.assertIn("s", row)
         self.assertIn("rm", row, "the log still has to know this agent has full access")
         self.assertIn("SomeoneElse isn't trusted yet", bridge.snapshot["lk"])
-        self.assertIn("whether you trust it", bridge.snapshot["lk"])
+        self.assertIn(f'" -I "{settings.PROGRAM_DIR / settings.ENTRY_POINT}" trust SomeoneElse', bridge.snapshot["lk"],
+                      "the notice names the exact command, so an agent that built the addon can trust it")
 
     def test_saying_yes_brings_the_words_back_with_no_restart(self):
         self.install_other("SomeoneElse")
@@ -57,6 +58,40 @@ class ThreadTextNeedsTrust(Base):
         (self.dir / "config.json").write_text(json.dumps({"trusted_addons": ["SomeoneElse"]}))
         self.assertIn("my thoughts", self.text(bridge))
         self.assertNotIn("lk", bridge.snapshot)
+
+    def test_running_the_command_it_names_brings_the_words_back(self):
+        self.install_other("MyAddon")
+        (self.dir / "config.json").write_text(json.dumps({"url": "http://t3", "wow_dir": str(self.wow)}))
+        bridge, _ = self.make()
+        self.assertNotIn("my thoughts", self.text(bridge))
+        printed = io.StringIO()
+        with mock.patch.object(settings, "CONFIG_DIR", self.dir), mock.patch.object(sys, "argv", ["promptpeon_bridge.py", "trust", "MyAddon"]), \
+                contextlib.redirect_stdout(printed):
+            cli.main()
+        self.assertIn("Trusted MyAddon", printed.getvalue())
+        self.assertIn("my thoughts", self.text(bridge))
+        self.assertNotIn("lk", bridge.snapshot)
+
+    def test_a_name_unsafe_to_paste_gets_no_command(self):
+        self.install_other("Evil;rm -rf ~")
+        bridge, _ = self.make()
+        self.text(bridge)
+        self.assertNotIn(settings.ENTRY_POINT, bridge.snapshot["lk"])
+        self.assertIn("installer again", bridge.snapshot["lk"])
+
+    def test_several_new_addons_go_through_the_installer(self):
+        self.install_other("One", "Two")
+        bridge, _ = self.make()
+        self.text(bridge)
+        self.assertNotIn(settings.ENTRY_POINT, bridge.snapshot["lk"])
+        self.assertIn("installer again", bridge.snapshot["lk"])
+
+    def test_a_refused_send_names_the_command_too(self):
+        self.install_other("MyAddon")
+        bridge, _ = self.make()
+        refused = gates.refused_by_other_addons(bridge)
+        self.assertTrue(refused.startswith("failed: MyAddon is installed"), refused)
+        self.assertIn(f'"{settings.PROGRAM_DIR / settings.ENTRY_POINT}" trust MyAddon', refused)
 
     def test_a_hundred_addons_are_still_one_short_line(self):
         self.install_other(*(f"Addon{number:03d}" for number in range(100)))
@@ -144,6 +179,57 @@ class ThreadTextNeedsTrust(Base):
                 mock.patch.object(prompts, "ask", return_value="n"), contextlib.redirect_stdout(printed):
             prompts.ask_about_other_addons(self.wow)
         self.assertIn("You have a new addon: New.", printed.getvalue())
+
+
+class TrustCommand(Base):
+    def setUp(self):
+        super().setUp()
+        patcher = mock.patch.object(settings, "CONFIG_DIR", self.dir)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.second = self.dir / "_retail_"
+        (self.second / "Interface/AddOns/OnlyOnRetail").mkdir(parents=True)
+        (self.wow / "Interface/AddOns/MyAddon").mkdir(parents=True)
+        self.write({"url": "http://t3", "wow_dir": str(self.wow), "wow_dirs": [str(self.wow), str(self.second)], "full_access": False})
+
+    def write(self, config):
+        (self.dir / "config.json").write_text(json.dumps(config))
+
+    def config(self):
+        return json.loads((self.dir / "config.json").read_text())
+
+    def trust(self, *names):
+        printed = io.StringIO()
+        with mock.patch.object(sys, "argv", ["promptpeon_bridge.py", "trust", *names]), contextlib.redirect_stdout(printed):
+            cli.main()
+        return printed.getvalue()
+
+    def test_it_adds_the_addon_and_keeps_every_other_setting(self):
+        self.assertIn("Trusted MyAddon", self.trust("MyAddon"))
+        config = self.config()
+        self.assertEqual(config["trusted_addons"], ["MyAddon"])
+        self.assertEqual((config["url"], config["full_access"]), ("http://t3", False))
+        self.trust("MyAddon")
+        self.assertEqual(self.config()["trusted_addons"], ["MyAddon"], "once is enough")
+
+    def test_it_finds_an_addon_in_any_of_your_clients(self):
+        self.trust("OnlyOnRetail", "MyAddon")
+        self.assertEqual(self.config()["trusted_addons"], ["OnlyOnRetail", "MyAddon"])
+
+    def test_a_name_that_isnt_an_installed_addon_changes_nothing(self):
+        before = (self.dir / "config.json").read_text()
+        for names in (["Typo"], ["MyAddon", "Typo"], ["../_forever_"], ["AddOns/MyAddon"], ["."], [".."]):
+            with self.assertRaises(SystemExit) as raised:
+                self.trust(*names)
+            self.assertIn("No addon called", str(raised.exception.code), names)
+            self.assertEqual((self.dir / "config.json").read_text(), before, names)
+
+    def test_before_the_installer_it_says_so(self):
+        (self.dir / "config.json").unlink()
+        with self.assertRaises(SystemExit) as raised:
+            self.trust("MyAddon")
+        self.assertIn("Run the installer first", str(raised.exception.code))
+        self.assertFalse((self.dir / "config.json").exists())
 
 
 class NothingTypedStaysBehind(Base):

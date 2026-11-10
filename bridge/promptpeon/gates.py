@@ -1,7 +1,10 @@
 """The checks on other addons and on full access. Any addon can write what ours writes, so these are the real checks."""
 from __future__ import annotations
 
+import re
+import sys
 import time
+from pathlib import Path
 
 from . import addonfiles, console, gametext, settings
 
@@ -9,6 +12,18 @@ from . import addonfiles, console, gametext, settings
 def other_addons(bridge) -> list[str]:
     """Addons you have not said you trust. WoW gives us no way to tell who is sending."""
     return addonfiles.other_addons_in(bridge.wow_dir, bridge.config().get("trusted_addons") or [])
+
+
+def trust_command(name: str) -> str | None:
+    """The exact command that trusts one addon, so an agent that built it can run it. Only for a name
+    that is safe to paste: whoever made the addon chose its folder name, and this goes into a terminal."""
+    if not re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_.-]{0,63}", name):
+        return None
+    python = Path(sys.executable)
+    if python.name.lower() == "pythonw.exe" and python.with_name("python.exe").exists():
+        python = python.with_name("python.exe")  # pythonw would print nothing.
+    # pa-lean: quoted for sh, bash and cmd. PowerShell wants "& " in front; add it if agents there trip on it.
+    return f'"{python}" -I "{settings.PROGRAM_DIR / settings.ENTRY_POINT}" trust {name}'
 
 
 def refused_full_access(bridge, thread: dict) -> str | None:
@@ -40,6 +55,9 @@ def withheld_because(bridge) -> str:
         return ""
     name = gametext.readable(others[0], 40)
     who = f"{name} isn't trusted yet" if len(others) == 1 else f"{name} and {len(others) - 1} more aren't trusted yet"
+    command = trust_command(others[0]) if len(others) == 1 else None
+    if command:
+        return f"{who}, {stays_out} To trust it, run: {command}"
     return f"{who}, {stays_out} Close WoW, run the Prompt Peon installer again and say whether you trust {'it' if len(others) == 1 else 'them'}."
 
 
@@ -55,5 +73,8 @@ def refused_by_other_addons(bridge) -> str | None:
                 "Run the Prompt Peon installer again to repair it")
     if not others:
         return None
+    command = trust_command(others[0]) if len(others) == 1 else None
+    if command:
+        return f"failed: {others[0]} is installed, and any addon could send through Prompt Peon. To trust it, run: {command}"
     return (f"failed: {others[0]} is installed, and any addon could send through Prompt Peon. "
             "Run the Prompt Peon installer again to say whether you trust it")

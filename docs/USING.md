@@ -49,7 +49,7 @@ The icons, from the left: Changes, Agents, Hide, Snooze, Track, Stop. Turn in ta
 - While CI is failing on a thread's open PR, Sunder the Build joins the spell bar. It tells the agent to read the real logs and fix the cause.
 
 ![The spell bar along the bottom of the log, with the pointer on Polymorph. Its tooltip says: Instant cast. Sends the open thread: Look at what you added. Remove anything the goal doesn't need and simplify what's left, without changing behavior.](images/spell-bar.png)
-- Come out of a dungeon, log back in or reopen the log after a while, and it tells you what your agents did. The letter icon by the cogwheel brings that report back, and lights up when there's a new one.
+- Come out of a dungeon, log back in or reopen the log after a while, and it tells you what your agents did. The letter tab on the right side of the log brings that report back, and lights up when there's a new one.
 - There are achievements, behind the seal icon beside it.
 
 ## Tracking and hiding
@@ -79,7 +79,7 @@ With the log closed and nothing happening, it refreshes every 90 seconds, which 
 | Can't reach T3 at ... | The T3 machine is asleep, or not reachable from here | Wake it, or check its network. It reconnects by itself |
 | Your link to T3 has expired | Links from another machine last 30 days | Make a new link in T3 and run the installer again |
 | T3 answered in a way this version doesn't understand | T3 probably updated | Get the newest Prompt Peon and run the installer again |
-| It says an addon isn't trusted yet, and thread text is missing | An addon you haven't trusted appeared. Names, status, the tracker and the party keep working | Close WoW, run the installer again and say yes. Or remove that addon |
+| It says an addon isn't trusted yet, and thread text is missing | An addon you haven't trusted appeared. Names, status, the tracker and the party keep working | If you trust it, run the command the notice names, or close WoW, run the installer again and say yes. Or remove that addon |
 | Something "has been changed, so it could be something else now" | One of Prompt Peon's own folders has something in it that the installer didn't put there | Run the installer again. It repairs it |
 | This agent has full access, and sending to those from the game is off | That's the safe default | Reply from T3, or run the installer again and say yes |
 | Starting agents that can act without asking is off | The same answer covers starting them | Start it in T3, pick another mode, or run the installer again and say yes |
@@ -92,7 +92,7 @@ WoW gives every addon access to the same things, and nothing can change that fro
 
 - **Addons you trust can see what Prompt Peon shows.** Your thread text and any diff you open sit in plain text in the addon folder while the game runs, where any addon can read them. The companion app clears them when you close the game, along with your drafts and any message that hadn't been sent.
 - **Addons you haven't trusted get thread names and status, and nothing else.** WoW can't stop an addon reading what's in the game, so the companion app keeps the words out until you've said yes. They can still draw a line or a popup that looks like ours, or use up refreshes, so don't install addons you don't trust at all.
-- **Sending from the game stays off while an addon you haven't trusted is installed,** because any addon could send through Prompt Peon. Add a new addon later and thread text and sending both stop until you run the installer again. Trust works by folder name, so a trusted addon's update is trusted too. Only trust addons you would hand the keys to.
+- **Sending from the game stays off while an addon you haven't trusted is installed,** because any addon could send through Prompt Peon. Add a new addon later and thread text and sending both stop until you trust it. When one new addon is in the way, the notice names the exact command, `trust` and its folder name, so an agent on this machine that built you an addon can trust it itself, with no restart. Trust works by folder name, so a trusted addon's update is trusted too. Only trust addons you would hand the keys to.
 - **Hiding is a privacy curtain, not a safe.** Hide a thread or project and its words, pictures and anything you opened leave the game at once, though a picture the game has already shown stays in its memory until the next reload, but its title and status stay, so you can find it again. Don't hide something whose title is the secret.
 - **Secrets get a safety net, not a guarantee.** Files like `.env`, `.envrc` and `*.pem` stay out of diffs, and text that looks like a key or password is replaced with `[hidden secret]`. Plenty of secrets don't look like one, so don't show your screen to strangers. Don't send your `WTF` folder to anyone while the game is open: it can hold your drafts and unsent messages until it closes.
 - **A plain `http://` link isn't encrypted.** Anyone on that network can read your threads and take your T3 access. Only say yes on a network you trust completely, and never on shared wifi. The installer asks first. An SSH tunnel or Tailscale avoids it.
@@ -101,7 +101,7 @@ WoW gives every addon access to the same things, and nothing can change that fro
 - **News goes in its own `Peon` chat tab:** finished threads, levels, loot and the like. In Options you can move it to your main chat or turn it off. What you ask for, and anything that goes wrong, always shows in your main chat.
 - **Chat shows only the start of a finished agent's message,** because other addons and chat logs keep what chat shows. The log has all of it. Your own replies stay out of chat.
 - Model and effort apply from a thread's next turn, and higher effort uses more of your quota.
-- **Answer an agent's question right in the log.** Each answer is a line you click, with what it means under it, and "Something else" lets you type your own. Pick one for each question, then click Send your answer. A question with more than 4 parts or more than 10 answers still has to be answered in T3, and the log says so.
+- **Answer an agent's question right in the log.** Each answer is a line you click, with what it means under it, and "Something else" lets you type your own. Pick one for each question, then click Send. With several questions, one Send sends all your answers together. A question with more than 4 parts or more than 10 answers still has to be answered in T3, and the log says so.
 - **New threads start in the approval mode you pick** on the New thread page: Supervised until you pick another, and your pick stays. Auto and Full access need the same yes as sending to those agents. Approvals themselves have to be answered in T3, and that stays that way.
 - This hasn't been reviewed by Blizzard, and Blizzard can change what addons may do.
 

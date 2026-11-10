@@ -114,9 +114,25 @@ function UI:NextRoll(kind)
   self:OpenThread(pick.id)
 end
 
---- Grey and faint until there's something to see: a report you haven't read, or a page that's open.
-function UI:RenderTopIcons()
-  if not self.reportIcon then return end
+UI.sideTabTop = -36 -- Just under the title bar, where the spellbook starts its tabs.
+UI.sideTabPitch = 49 -- The spellbook's: its tab art is 56 tall, so closer and the plates overlap.
+
+--- Stacks the shown tabs down the right edge, so a missing one leaves no hole.
+-- Three of them reach 179 down, art included, inside the smallest window (240).
+function UI:PlaceSideTabs()
+  local y = UI.sideTabTop
+  for _, tab in ipairs(self.sideTabs) do
+    if tab:IsShown() then
+      tab:ClearAllPoints()
+      tab:SetPoint("TOPLEFT", self.frame, "TOPRIGHT", 0, y)
+      y = y - UI.sideTabPitch
+    end
+  end
+end
+
+--- Each tab is pressed while its page is open. The dice stay grey and faint until someone's rolling.
+function UI:RenderSideTabs()
+  if not self.sideTabs then return end
   local game = ns.Game
   self.reportIcon:SetShown(game ~= nil)
   self.achievementsIcon:SetShown(game ~= nil)
@@ -124,18 +140,24 @@ function UI:RenderTopIcons()
     button.icon:SetDesaturated(not lit)
     button.icon:SetAlpha(lit and 1 or 0.6)
   end
-  light(self.reportIcon, (game and game.reportFresh or self.showReport) and true or false)
+  local report = (self.showReport and game and game.report) and true or false
+  self.reportIcon:SetChecked(report)
+  light(self.reportIcon, report or (game and game.reportFresh and true) or false)
+  self.achievementsIcon:SetChecked(self.showAchievements and true or false)
   light(self.achievementsIcon, self.showAchievements and true or false)
+  self.options:SetChecked(self.showOptions and true or false)
+  light(self.options, true)
   for kind, button in pairs({ need = self.needIcon, greed = self.greedIcon }) do
     local count = #UI.Rolls(kind)
     light(button, count > 0)
     button.count:SetText(count > 0 and count or "")
   end
+  self:PlaceSideTabs()
 end
 
 --- Which buttons the open thread gets, and what each one says in its current state.
 function UI:RenderControls(thread)
-  self:RenderTopIcons()
+  self:RenderSideTabs()
   local onPage = self.newThread or self.showOptions or self.showAchievements or (self.showReport and ns.Game and ns.Game.report)
   local open = thread and not onPage
   -- A thread you followed a link to isn't on your list, so there's nothing to turn in or reopen.

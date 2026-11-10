@@ -87,6 +87,7 @@ The installer copies the app to the program folder above. From there:
     python3 promptpeon_bridge.py once        # refresh once and print what happened
     python3 promptpeon_bridge.py run         # run in the foreground
     python3 promptpeon_bridge.py start-stop  # turn it off if it's running, and on if it isn't
+    python3 promptpeon_bridge.py trust MyAddon  # trust an addon by its folder name, no restart needed
     python3 promptpeon_bridge.py uninstall   # remove everything
 
 The installer takes `--client era|retail|forever`, `--wow-dir`, `--link`, `--url`, `--pictures`, `--no-pictures`, `--full-access`, `--no-full-access`, `--no-start`, `--allow-unencrypted` and `--no-update`.
