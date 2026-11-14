@@ -101,6 +101,10 @@ RELAY_DOMAIN = "t3coderelay.com"  # T3 Connect: every request here crosses T3's 
 RELAY_REFRESH_SECONDS = 15  # So it goes easier on that. What you send still refreshes straight away.
 HEARTBEAT_SECONDS = 30  # Unchanged data is rewritten this often, so the addon knows we are alive.
 VERSION_CHECK_SECONDS = 60
+BELL_COUNT = 8  # Keep equal to ns.BELL_COUNT in the addon.
+BELL_SECONDS, BELL_RATE = 10, 22050  # 441,044 bytes: over the size the game keeps in memory, as measured.
+MAX_APPROVAL_CHARS = 8000  # A request longer than this is approved in T3, where all of it can be read at once.
+TOKEN_CHECK_SECONDS = 3600  # How often to look at whether a token from this machine's T3 is due for renewal.
 GAME_CHECK_SECONDS = 5  # How often to look for the game. tasklist is too slow to run every second.
 IS_WINDOWS = os.name == "nt"
 if IS_WINDOWS:

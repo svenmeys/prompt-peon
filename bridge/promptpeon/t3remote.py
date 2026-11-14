@@ -191,6 +191,20 @@ class T3Remote:
                 return item
         return None
 
+    def open_approval(self, thread_id: str) -> dict | None:
+        """What this thread is asking to be allowed to do right now, read fresh from T3, or None."""
+        base = f"/api/orchestration/threads/{urllib.parse.quote(thread_id)}"
+        items = self._request(f"{base}/bounded")["projection"].get("turnItems") or []
+        for item in sorted(items, key=lambda entry: entry.get("ordinal") or 0, reverse=True):
+            if item.get("type") == "approval_request" and timeline.state_of(item) == "r":
+                return item
+        return None
+
+    def answer_approval(self, thread_id: str, request_id: str, decision: str) -> None:
+        """The same command T3's own window sends for Approve or Decline."""
+        self._rpc("orchestration.dispatchCommand", {"type": "runtime-request.respond", "commandId": str(uuid.uuid4()),
+                                                    "threadId": thread_id, "requestId": request_id, "decision": decision})
+
     def answer_question(self, thread_id: str, request_id: str, answers: dict) -> None:
         """The same command T3's own window sends: each question's id, and the answer picked or typed."""
         self._rpc("orchestration.dispatchCommand", {"type": "runtime-request.respond", "commandId": str(uuid.uuid4()),

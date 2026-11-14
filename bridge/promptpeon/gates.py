@@ -19,11 +19,28 @@ def trust_command(name: str) -> str | None:
     that is safe to paste: whoever made the addon chose its folder name, and this goes into a terminal."""
     if not re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_.-]{0,63}", name):
         return None
+    return cli_command(f"trust {name}")
+
+
+def cli_command(words: str) -> str:
+    """The exact command line for one of the companion app's own commands, for a notice to name.
+    `words` is ours or already checked: it goes into a terminal as it is."""
     python = Path(sys.executable)
     if python.name.lower() == "pythonw.exe" and python.with_name("python.exe").exists():
         python = python.with_name("python.exe")  # pythonw would print nothing.
     # pa-lean: quoted for sh, bash and cmd. PowerShell wants "& " in front; add it if agents there trip on it.
-    return f'"{python}" -I "{settings.PROGRAM_DIR / settings.ENTRY_POINT}" trust {name}'
+    return f'"{without_your_name(python)}" -I "{without_your_name(settings.PROGRAM_DIR / settings.ENTRY_POINT)}" {words}'
+
+
+def without_your_name(path: Path) -> str:
+    """A path for the game to show. Your home folder has your account's name in it, and the game's
+    chat ends up in screenshots and streams. So the home folder is named the way a shell names it,
+    which still runs when pasted: inside double quotes sh expands $HOME and cmd expands %USERPROFILE%."""
+    try:
+        inside = path.relative_to(Path.home())
+    except ValueError:
+        return str(path)
+    return f"%USERPROFILE%\\{inside}" if settings.IS_WINDOWS else f"$HOME/{inside.as_posix()}"
 
 
 def refused_full_access(bridge, thread: dict) -> str | None:

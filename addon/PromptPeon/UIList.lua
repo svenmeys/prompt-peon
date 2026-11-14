@@ -3,16 +3,49 @@
 local _, ns = ...
 local UI = ns.UI
 local PAD, addFold, showFold, hideScrollBarWhenIdle = UI.PAD, UI.AddFold, UI.ShowFold, UI.HideScrollBarWhenIdle
+local STATUS, colored = UI.STATUS, UI.Colored
 
 local ROW_HEIGHT = 20
 local HEADER_HEIGHT = 22
+local FILTER_HEIGHT = 24 -- The search box above the list, and the gap under it.
+local TAG_WIDTH = 20
+-- Soft colours that read on the dark window, so a project is a colour as well as two letters.
+local TAG_COLORS = { "7fb2e5", "e5b27f", "9fd18b", "d89bd8", "e5d27f", "7fd6cf", "e59a8a", "b3a6ee" }
+
+--- A project's two letters and its colour: the first letter of its first two words, or its first
+--- two letters when it is one word. The same project always gets the same colour.
+function UI.ProjectTag(project)
+  local name = tostring(project or "")
+  local first, second = name:match("^%W*(%w)%w*%W+(%w)")
+  local letters = first and (first .. second) or name:match("%w%w?") or "?"
+  return letters:upper(), TAG_COLORS[ns.Crc32(name) % #TAG_COLORS + 1]
+end
 
 function UI:BuildList(frame)
   local scroll = CreateFrame("ScrollFrame", "PromptPeonListScroll", frame, "UIPanelScrollFrameTemplate")
-  scroll:SetPoint("TOPLEFT", self.top, "BOTTOMLEFT", PAD, -2)
+  scroll:SetPoint("TOPLEFT", self.top, "BOTTOMLEFT", PAD, -2 - FILTER_HEIGHT)
   scroll:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", PAD, 40)
   scroll:SetWidth(UI.ListWidth())
   self.listScroll = scroll
+  -- Type to narrow the list down: the game's own search box, as wide as the list.
+  local filter = CreateFrame("EditBox", "PromptPeonListFilter", frame, "SearchBoxTemplate")
+  filter:SetHeight(20)
+  filter:SetPoint("BOTTOMLEFT", scroll, "TOPLEFT", 6, 4)
+  filter:SetPoint("BOTTOMRIGHT", scroll, "TOPRIGHT", -2, 4)
+  filter:SetAutoFocus(false)
+  filter:HookScript("OnTextChanged", function(self)
+    local words = ns.Typed(self:GetText() or ""):lower():gsub("^%s+", ""):gsub("%s+$", "")
+    if words == (UI.filter or "") then return end
+    UI.filter = words ~= "" and words or nil
+    if UI:IsOpen() then UI:Render() end
+  end)
+  self.filterBox = filter
+  -- A text box keeps the keyboard until told otherwise. Click anywhere else and it lets go.
+  local clicks = CreateFrame("Frame")
+  clicks:RegisterEvent("GLOBAL_MOUSE_DOWN")
+  clicks:SetScript("OnEvent", function()
+    if filter:HasFocus() and not filter:IsMouseOver() then filter:ClearFocus() end
+  end)
   local content = CreateFrame("Frame", nil, scroll)
   content:SetSize(UI.ListWidth(), 10)
   scroll:SetScrollChild(content)
@@ -78,6 +111,12 @@ function UI:Row(index)
   row.selected:SetVertexColor(1.0, 0.82, 0.0, 0.6)
   row.selected:Hide()
   addFold(row, 16, "LEFT", 2, 0)
+  -- Two letters for the thread's project, in that project's colour, in a column of their own.
+  row.tag = row:CreateFontString(nil, "OVERLAY", "PromptPeonSmall")
+  row.tag:SetPoint("LEFT", 6, 0)
+  row.tag:SetWidth(TAG_WIDTH)
+  row.tag:SetJustifyH("LEFT")
+  row.tag:SetWordWrap(false)
   row.text = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   row.text:SetPoint("LEFT", 4, 0)
   row.text:SetPoint("RIGHT", -4, 0)
@@ -113,8 +152,6 @@ function UI:Row(index)
     if button == "RightButton" then
       if self.thread then
         UI:ThreadMenu(self, self.thread)
-      elseif self.project then
-        UI:ProjectMenu(self, self.project)
       elseif self.hiddenProject then
         UI:ProjectMenu(self, self.hiddenProject)
       end
@@ -122,14 +159,12 @@ function UI:Row(index)
     end
     if self.foldKey then
       ns.db[self.foldKey] = not ns.db[self.foldKey] or nil
-    elseif self.project then
-      ns.db.collapsed[self.project] = not ns.db.collapsed[self.project] or nil
     elseif self.thread and IsShiftKeyDown() then
       ns:ToggleTracked(self.thread)
       return
     elseif self.thread then
-      UI:SaveDraft()
-      ns.db.selected = self.thread.id
+      UI:OpenThread(self.thread.id) -- Out of any page or view, to the thread itself.
+      return
     end
     UI:Render()
   end)
@@ -139,19 +174,6 @@ function UI:Row(index)
   row:SetScript("OnLeave", function() GameTooltip:Hide() end)
   self.rows[index] = row
   return row
-end
-
---- Projects in order of their most urgent thread. Threads arrive sorted by urgency.
-local function grouped(threads)
-  local order, byProject = {}, {}
-  for _, thread in ipairs(threads) do
-    if not byProject[thread.p] then
-      byProject[thread.p] = {}
-      order[#order + 1] = thread.p
-    end
-    table.insert(byProject[thread.p], thread)
-  end
-  return order, byProject
 end
 
 --- The game's own mark for a thread, and how bright: a mark you have already read fades.
@@ -166,15 +188,26 @@ function UI.RowMark(thread)
   return nil, 1
 end
 
---- Reuses rows from the top down, then hides whichever are left over.
+--- Whether a thread's name or its project's has what you typed in the search box.
+function UI:MatchesFilter(thread)
+  local words = self.filter
+  if not words then return true end
+  return tostring(thread.t or ""):lower():find(words, 1, true) ~= nil or tostring(thread.p or ""):lower():find(words, 1, true) ~= nil
+end
+
+--- Reuses rows from the top down, then hides whichever are left over. While you're searching,
+--- every group that has a match is open, whatever you folded, and the rest are left out.
 function UI:RenderList(threads)
+  local searching = self.filter ~= nil
   local visible, hidden = {}, {}
   for _, thread in ipairs(threads) do
-    if ns:IsHidden(thread) then hidden[#hidden + 1] = thread else visible[#visible + 1] = thread end
+    if not self:MatchesFilter(thread) then -- Left out while you search.
+    elseif ns:IsHidden(thread) then hidden[#hidden + 1] = thread else visible[#visible + 1] = thread end
   end
   local snoozed, settled = {}, {}
   for _, thread in ipairs(ns.snapshot and ns.snapshot.pk or {}) do
     if thread.pk == "l" then -- Only here so a link can open it. It isn't on your list.
+    elseif not self:MatchesFilter(thread) then
     elseif ns:IsHidden(thread) then
       hidden[#hidden + 1] = thread
     elseif thread.pk == "z" then
@@ -184,9 +217,16 @@ function UI:RenderList(threads)
     end
   end
   for _, row in ipairs(ns.starting) do
-    if not ns:IsHidden(row) then table.insert(visible, 1, row) end
+    if not ns:IsHidden(row) and self:MatchesFilter(row) then table.insert(visible, 1, row) end
   end
-  local order, byProject = grouped(visible)
+  -- Sorted by what a thread wants from you, not by project: whoever is waiting on you, finished work
+  -- you haven't read, agents at work, and then the quiet ones. Each line says its project in two letters.
+  local needs, unread, working, quiet = {}, {}, {}, {}
+  for _, thread in ipairs(visible) do
+    local wants = not thread.starting and ns:WantsYou(thread)
+    local group = wants == "needs" and needs or wants == "unread" and unread or (thread.starting or thread.s == "running") and working or quiet
+    group[#group + 1] = thread
+  end
   local index, y = 0, 0
   local width = self.listContent:GetWidth()
   local function place(height)
@@ -201,6 +241,7 @@ function UI:RenderList(threads)
     row.trackIcon:Hide()
     row.when:Hide()
     row.showButton:Hide()
+    row.tag:SetText("")
     row.hiddenProject = nil
     row.text:SetPoint("RIGHT", row, "RIGHT", -4, 0)
     y = y + height
@@ -208,9 +249,11 @@ function UI:RenderList(threads)
   end
   local function threadRow(thread, dim)
     local row = place(ROW_HEIGHT)
-    row.project, row.thread, row.isHiddenHeader, row.foldKey = nil, thread, nil, nil
+    row.thread, row.isHiddenHeader, row.foldKey = thread, nil, nil
     showFold(row, nil)
-    row.text:SetPoint("LEFT", row, "LEFT", 10, 0)
+    local letters, color = UI.ProjectTag(thread.p)
+    row.tag:SetText("|cff" .. (dim and "707070" or color) .. letters .. "|r")
+    row.text:SetPoint("LEFT", row, "LEFT", 10 + TAG_WIDTH, 0)
     row.selected:SetShown(ns.db.selected == thread.id)
     row.text:SetFontObject("PromptPeonSmall")
     local title = ns.Plain(thread.t)
@@ -244,80 +287,100 @@ function UI:RenderList(threads)
     row.when:Hide()
     row.text:SetPoint("RIGHT", row, "RIGHT", -22, 0)
   end
-  --- A group below the projects, closed until you open it.
+  --- A group of threads under one coloured heading. With a fold key it can be closed, and stays
+  --- how you left it, except while you search.
+  local function group(label, info, threads, closedKey)
+    if #threads == 0 then return end
+    local closed = closedKey and ns.db[closedKey] and not searching
+    local header = place(HEADER_HEIGHT)
+    header.thread, header.isHiddenHeader, header.foldKey = nil, nil, closedKey
+    header.selected:Hide()
+    header.text:SetFontObject("PromptPeonHeader")
+    if closedKey then showFold(header, not closed) else showFold(header, nil) end
+    header.text:SetPoint("LEFT", header, "LEFT", closedKey and 20 or 6, 0)
+    header.text:SetText(colored(info, label) .. "  |cff888888(" .. #threads .. ")|r")
+    if not closed then
+      for _, thread in ipairs(threads) do threadRow(thread, false) end
+    end
+  end
+  --- A group at the bottom, closed until you open it. Hidden also lists each project you hid as a
+  --- line of its own, so it can be shown again even when none of its threads are here right now.
   local function bottomGroup(label, threads, foldKey)
     local isHidden = foldKey == "hiddenOpen"
-    local projects, byName = grouped(threads)
-    -- A hidden project with nothing in it right now still has to be findable, or you could never show it.
-    if isHidden then
-      for name in pairs(ns.db.hiddenProjects) do
-        if not byName[name] then
-          byName[name] = {}
-          projects[#projects + 1] = name
-        end
+    local projects = {}
+    if isHidden and not searching then
+      for name in pairs(ns.db.hiddenProjects) do projects[#projects + 1] = name end
+      table.sort(projects)
+    end
+    -- A hidden project's threads go under its line. The rest are a flat list.
+    local loose, under, empty = {}, {}, 0
+    for _, thread in ipairs(threads) do
+      if isHidden and ns.db.hiddenProjects[thread.p] and not searching then
+        under[thread.p] = under[thread.p] or {}
+        table.insert(under[thread.p], thread)
+      else
+        loose[#loose + 1] = thread
       end
     end
-    local empty = 0
     for _, name in ipairs(projects) do
-      if #byName[name] == 0 then empty = empty + 1 end
+      if not under[name] then empty = empty + 1 end
     end
     if #threads + empty == 0 then return end
     local header = place(HEADER_HEIGHT)
-    header.project, header.thread, header.isHiddenHeader, header.foldKey = nil, nil, isHidden or nil, foldKey
+    header.thread, header.isHiddenHeader, header.foldKey = nil, isHidden or nil, foldKey
     header.selected:Hide()
     header.text:SetFontObject("PromptPeonSmall")
-    showFold(header, ns.db[foldKey] == true)
+    local open = searching or ns.db[foldKey] == true
+    showFold(header, open)
     header.text:SetPoint("LEFT", header, "LEFT", 20, 0)
     -- Only the newest settled threads reach the game, so a number there would stick at the cap.
     local count = foldKey == "settledOpen" and "" or (" (" .. (#threads + empty) .. ")")
     header.text:SetText("|cff808080" .. label .. count .. "|r")
-    if ns.db[foldKey] then
-      -- These come from every project, so say which, newest project first.
-      for _, project in ipairs(projects) do
-        local name = project
-        local row = place(ROW_HEIGHT)
-        row.project, row.thread, row.isHiddenHeader, row.foldKey = nil, nil, nil, nil
-        row.selected:Hide()
-        row.text:SetFontObject("PromptPeonSmall")
-        showFold(row, nil)
-        row.text:SetPoint("LEFT", row, "LEFT", 6, 0)
-        row.text:SetText("|cffb8a56a" .. ns.Plain(name) .. "|r")
-        if isHidden and ns.db.hiddenProjects[name] then
-          row.hiddenProject = name
-          showEye(row, "Show this project", function() UI:SetProjectHidden(name, false) end)
-        end
-        for _, thread in ipairs(byName[name]) do
-          threadRow(thread, true)
-          if isHidden and not ns.db.hiddenProjects[name] then
-            local item = thread
-            showEye(self.rows[index], "Show this thread", function() UI:ToggleHidden(item) end)
-          end
-        end
+    if not open then return end
+    for _, name in ipairs(projects) do
+      local row = place(ROW_HEIGHT)
+      row.thread, row.isHiddenHeader, row.foldKey = nil, nil, nil
+      row.selected:Hide()
+      row.text:SetFontObject("PromptPeonSmall")
+      showFold(row, nil)
+      local letters = UI.ProjectTag(name)
+      row.tag:SetText("|cff707070" .. letters .. "|r")
+      row.text:SetPoint("LEFT", row, "LEFT", 10 + TAG_WIDTH, 0)
+      row.text:SetText("|cffb8a56a" .. ns.Plain(name) .. "|r  |cff808080whole project|r")
+      row.hiddenProject = name
+      showEye(row, "Show this project", function() UI:SetProjectHidden(name, false) end)
+      for _, thread in ipairs(under[name] or {}) do threadRow(thread, true) end
+    end
+    for _, thread in ipairs(loose) do
+      threadRow(thread, true)
+      if isHidden and not ns.db.hiddenProjects[thread.p] then
+        local item = thread
+        showEye(self.rows[index], "Show this thread", function() UI:ToggleHidden(item) end)
       end
     end
   end
-  for _, project in ipairs(order) do
-    local collapsed = ns.db.collapsed[project]
-    local header = place(HEADER_HEIGHT)
-    header.project, header.thread, header.isHiddenHeader, header.foldKey = project, nil, nil, nil
-    header.selected:Hide()
-    header.text:SetFontObject("PromptPeonHeader")
-    showFold(header, not collapsed)
-    header.text:SetPoint("LEFT", header, "LEFT", 20, 0)
-    header.text:SetText(ns.Plain(project) .. "  |cff888888(" .. #byProject[project] .. ")|r")
-    if not collapsed then
-      for _, thread in ipairs(byProject[project]) do threadRow(thread, false) end
-    end
-  end
-  -- Everything that isn't asking for you goes below the projects, closed by default.
+  group("Needs you", STATUS.needs, needs)
+  group("Unread", STATUS.done, unread)
+  group("Working", STATUS.running, working, "workingClosed")
+  group("Quiet", STATUS.idle, quiet, "quietClosed")
+  -- Parked threads go at the bottom, closed by default.
   bottomGroup("Snoozed", snoozed, "snoozedOpen")
   bottomGroup("Settled", settled, "settledOpen")
   bottomGroup("Hidden", hidden, "hiddenOpen")
+  if searching and index == 0 then
+    local row = place(ROW_HEIGHT)
+    row.thread, row.isHiddenHeader, row.foldKey = nil, nil, nil
+    row.selected:Hide()
+    showFold(row, nil)
+    row.text:SetPoint("LEFT", row, "LEFT", 4, 0)
+    row.text:SetFontObject("PromptPeonSmall")
+    row.text:SetText("|cff808080No thread or project has that in its name.|r")
+  end
   -- The snapshot is cut at a cap. Say so, so a missing thread isn't a mystery.
   local total = tonumber(ns.snapshot and ns.snapshot.tc)
   if total and total > #threads then
     local row = place(ROW_HEIGHT)
-    row.project, row.thread, row.isHiddenHeader, row.foldKey = nil, nil, nil, nil
+    row.thread, row.isHiddenHeader, row.foldKey = nil, nil, nil
     row.selected:Hide()
     showFold(row, nil)
     row.text:SetPoint("LEFT", row, "LEFT", 4, 0)

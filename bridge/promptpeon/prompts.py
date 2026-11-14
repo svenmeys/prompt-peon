@@ -48,6 +48,22 @@ def trust_addons(names: list[str]) -> str:
     return f"Trusted {', '.join(dict.fromkeys(names))}. Thread text and sending come back in the game on the next refresh, with no restart."
 
 
+def set_yolo(on: bool) -> str:
+    """yolo on / yolo off: whether the game may approve what agents ask to do. Decided out here,
+    where no addon can reach, and it takes effect on the next refresh with no restart."""
+    config = userconfig.read_config()
+    if on:
+        config["yolo"] = True
+    else:
+        config.pop("yolo", None)
+    settings.CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    safefiles.write_atomic(settings.CONFIG_DIR / "config.json", json.dumps(config, indent=2))
+    if on:
+        return ("Yolo mode is on. The game can now Approve or Decline what your agents ask to do, and so can any addon you trust, "
+                "through Prompt Peon. Turn it off with: yolo off")
+    return "Yolo mode is off. Approvals are answered in T3 again."
+
+
 def ask(prompt: str) -> str:
     try:
         return input(screen.question(prompt)).strip()

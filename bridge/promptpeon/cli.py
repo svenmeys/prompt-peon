@@ -1,4 +1,4 @@
-"""The command line: install, uninstall, start-stop, run, once, status, link and trust."""
+"""The command line: install, uninstall, start-stop, run, once, status, link, trust and yolo."""
 from __future__ import annotations
 
 import argparse
@@ -48,6 +48,8 @@ def main() -> None:
     once.add_argument("--quiet", action="store_true")
     sub.add_parser("status", help="check the connection to T3")
     sub.add_parser("link", help="on the T3 machine: make a one-time link for a game somewhere else, over T3 Connect")
+    yolo = sub.add_parser("yolo", help="let the game approve what agents ask to do (on), or keep approvals in T3 (off)")
+    yolo.add_argument("state", choices=["on", "off"])
     trust = sub.add_parser("trust", help="trust an addon by its folder name, so Prompt Peon keeps sending while it's installed")
     trust.add_argument("names", nargs="+", metavar="addon")
     args = parser.parse_args()
@@ -59,6 +61,9 @@ def main() -> None:
         return
     if args.command == "start-stop":
         print(autostart.start_stop())
+        return
+    if args.command == "yolo":
+        print(prompts.set_yolo(args.state == "on"))
         return
     if args.command == "trust":
         print(prompts.trust_addons(args.names))

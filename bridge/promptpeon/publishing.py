@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 import time
 
-from . import console, gates, pullrequests, safefiles, settings, snapshots, threadstate, updater
+from . import bells, console, gates, pullrequests, safefiles, settings, snapshots, threadstate, updater
 
 
 def update_fields(newer_release: str | None) -> dict:
@@ -15,6 +15,10 @@ def publish(bridge) -> None:
     if bridge.game_closed:
         go_quiet(bridge)
         return
+    # A bell that couldn't be rung, say because the game had the file open that instant, is tried
+    # again here. Left quiet, the game would take its own snapshot's bell for news that isn't there.
+    if bridge.bell_unrung and bells.ring(bridge.bells, bridge.bell):
+        bridge.bell_unrung = False
     withheld = gates.withheld_because(bridge)
     details = {}
     if bridge.shell is not None:
@@ -37,6 +41,8 @@ def publish(bridge) -> None:
             del bridge.loaded[thread_id]
     if bridge.catalog:
         snapshot["md"] = bridge.catalog
+    if bridge.config().get("yolo") is True:
+        snapshot["yo"] = True  # Only so the game shows Approve and Decline. The check is in commands.approve_request.
     if bridge.config().get("full_access") is True:
         snapshot["fa"] = True  # Only so the game can grey out what would be refused. The check is in commands.command_result.
     snapshot["rc"] = bridge.state.get("sums") or {}
@@ -70,6 +76,11 @@ def publish(bridge) -> None:
             bridge.previews.clear_files(new_session=False)
     bridge.was_withheld = bool(withheld)
     snapshots.fit_snapshot(snapshot)
+    # The bell's count rides in the snapshot. When something worth knowing at once changed, this
+    # snapshot gets the next count, and its bell is rung once the snapshot is safely written.
+    shape = bells.shape(snapshot)
+    ringing = bells.is_news(bridge.bell_shape, shape)
+    snapshot["sg"] = bridge.bell + 1 if ringing else bridge.bell
     bridge.snapshot = snapshot
     # Agents are often quiet, and a snapshot can be hundreds of KB. Only write real changes,
     # plus a heartbeat, because the time in the file is how the addon knows we are alive.
@@ -88,6 +99,10 @@ def publish(bridge) -> None:
     else:
         safefiles.write_atomic(bridge.snapshot_path, snapshots.render_snapshot(snapshot))
     bridge.last_written, bridge.last_write_at = body, now
+    bridge.bell_shape = shape
+    if ringing:
+        bridge.bell = snapshot["sg"]
+        bridge.bell_unrung = not bells.ring(bridge.bells, bridge.bell)
 
 
 def go_quiet(bridge) -> None:
@@ -101,12 +116,15 @@ def go_quiet(bridge) -> None:
     snapshot = snapshots.build_snapshot(None, {}, url=bridge.remote.url, error="", error_since=0, ack=bridge.state["ack"],
                               results=bridge.state["results"])
     bridge.revision += 1
-    snapshot.update(quiet=True, sid=bridge.session, rv=bridge.revision, rc=bridge.state.get("sums") or {})
-    bridge.last_written = ""
+    snapshot.update(quiet=True, sid=bridge.session, rv=bridge.revision, rc=bridge.state.get("sums") or {}, sg=bridge.bell)
+    bridge.last_written, bridge.bell_shape = "", None
     if bridge.snapshot_path.parent.is_dir():
         if bridge.in_place and bridge.snapshot_path.exists():
             safefiles.write_in_place(bridge.snapshot_path, snapshots.render_snapshot(snapshot))
         else:
             safefiles.write_atomic(bridge.snapshot_path, snapshots.render_snapshot(snapshot))
+        # The count in that snapshot has to have its bell, or a game that starts before we next
+        # speak would hear "news" that isn't there. On a new install no bell has rung yet.
+        bridge.bell_unrung = not bells.ring(bridge.bells, bridge.bell)
     if bridge.previews.folder.is_dir():
         bridge.previews.clear_files()

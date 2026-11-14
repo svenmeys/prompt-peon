@@ -10,19 +10,21 @@ For Classic Era, retail and WoW Forever. Free and open source.
 
 ## What you get
 
-**A quest log.** `/peon` opens every thread under its project, with the whole conversation: messages, tool steps, todo lists, questions and pictures.
+**A quest log that works like an inbox.** `/peon` opens with what needs you and what you haven't read on top, then the agents at work and the quiet ones, with the whole conversation: messages, tool steps, todo lists, questions and pictures.
 
-![The Prompt Peon window. Threads are grouped by project on the left, each with a status mark. The open thread fills the right side, with spells and a Send button along the bottom.](docs/images/hero.jpg)
+![The Prompt Peon window as it looked in 0.32: threads on the left, each with a status mark, and the open thread on the right with spells and a Send button along the bottom. Since 0.38 the list is sorted into Needs you, Unread, Working and Quiet, and the page buttons are tabs on the right edge.](docs/images/hero.jpg)
 
-**Real controls.** Reply, answer an agent's questions, steer, start, stop, snooze and turn in. See what a thread changed in a colored diff, the subagents it sent out, and its pull requests with their CI. Approvals stay in T3.
+*The pictures here are from 0.32. New ones are on their way.*
+
+**Real controls.** Reply, answer an agent's questions, steer, start, stop, snooze and turn in. See what a thread changed in a colored diff, the subagents it sent out, and its pull requests with their CI. Approvals stay in T3 unless you turn on yolo mode.
 
 ![The snooze menu: For 1 hour, For 4 hours, Until tomorrow morning, Until Monday morning.](docs/images/snooze.png)
 
-**A party.** A tracker shows who needs you, and each agent gets a portrait: peons for the Horde, peasants for the Alliance, the undead for the Forsaken, or whichever you pick. Health shows how the turn is going, mana is how much context is left, and if you turn on **Elite frames** in Options, veterans earn silver and gold dragons.
+**A party, if you want one.** A tracker shows who needs you. Turn on party frames and each agent gets a portrait: peons for the Horde, peasants for the Alliance, the undead for the Forsaken, or whichever you pick. Health shows how the turn is going, mana is how much context is left, and if you turn on **Elite frames** in Options, veterans earn silver and gold dragons.
 
 ![Five peon party frames with health and mana bars. Two wear silver or gold dragons for their level, one is low on mana and marked OOM, and one is grey with a red mark because its agent failed.](docs/images/party.jpg)
 
-![The tracker saying Peons: 1 failed, 2 working above five threads.](docs/images/tracker.jpg)
+![The tracker as it looked in 0.32, saying Peons: 1 failed, 2 working above five threads. Since 0.38 it lists only threads that want something from you.](docs/images/tracker.jpg)
 
 **The fun part.** Each of these tells you something true about the work:
 

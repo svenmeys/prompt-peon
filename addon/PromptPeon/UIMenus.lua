@@ -218,6 +218,7 @@ function UI:ThreadMenu(owner, thread, fromParty)
     thread.s == "error" and ns.Game and { text = "Resurrect", run = function() ns.Game:Resurrect(thread) end } or false,
     thread.s ~= "needs" and { text = "Snooze...", run = function() UI:SnoozeMenu(owner, thread) end } or false,
     { text = ns:IsTracked(thread) and "Stop tracking" or "Track", run = function() ns:ToggleTracked(thread) end },
+    { text = "New thread in " .. ns.Plain(thread.p), run = function() UI:StartNewThread(thread.p) end },
     fromParty and { text = "Change face", run = function() UI.NextFace(thread) end } or false,
     hide,
   })
@@ -269,11 +270,6 @@ end
 function UI:ProjectMenu(owner, project)
   local hidden = ns.db.hiddenProjects[project] == true
   self:ShowMenu(owner, {
-    not hidden and { text = "New thread here", run = function() UI:StartNewThread(project) end } or false,
-    not hidden and { text = ns.db.collapsed[project] and "Expand" or "Collapse", run = function()
-      ns.db.collapsed[project] = not ns.db.collapsed[project] or nil
-      UI:Render()
-    end } or false,
     { text = hidden and "Show this project" or "Hide this project", run = function() UI:SetProjectHidden(project, not hidden) end },
   })
 end

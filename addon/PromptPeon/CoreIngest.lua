@@ -16,15 +16,35 @@ function ns:VisibleThreads()
   return out
 end
 
---- Like quests: pin any thread. Working agents track themselves unless you untrack them.
+--- What a thread wants from you, the way an inbox sorts it: "needs" when it's waiting on your answer
+--- or approval, or failed and is waiting for you to decide what happens to it; "unread" when it
+--- finished and you haven't read that; nil when it wants nothing. Without the game files nothing
+--- keeps track of what you've read, so there is only "needs".
+function ns:WantsYou(thread)
+  if thread.s == "needs" or thread.s == "error" then return "needs" end
+  if thread.s == "done" and self.Game and self.Game.IsUnread(thread) then return "unread" end
+  return nil
+end
+
+--- The tracker's rows, in order: who is waiting on you, then finished work you haven't read, then
+--- anything you pinned by hand. A thread that's just working isn't in it.
+function ns:Inbox()
+  local inbox, threads = {}, self:VisibleThreads()
+  for _, want in ipairs({ "needs", "unread", "pinned" }) do
+    for _, thread in ipairs(threads) do
+      if (self:WantsYou(thread) or (self:IsTracked(thread) and "pinned")) == want then inbox[#inbox + 1] = thread end
+    end
+  end
+  return inbox
+end
+
+--- Pinned by hand, to keep a thread on the tracker and the party frames whatever it's doing.
 function ns:IsTracked(thread)
-  local choice = self.db.tracked[thread.id]
-  if choice ~= nil then return choice end
-  return thread.s == "running" or thread.s == "needs"
+  return self.db.tracked[thread.id] == true
 end
 
 function ns:ToggleTracked(thread)
-  self.db.tracked[thread.id] = not self:IsTracked(thread)
+  self.db.tracked[thread.id] = not self:IsTracked(thread) or nil
   if self.UI then self.UI:Render() end
 end
 
@@ -275,7 +295,11 @@ function ns:ApplyAcks(snapshot)
           db.drafts[db.selected] = entry.text:match("^[^\n]*\n[^\n]*\n[^\n]*\n(.*)$")
         end
       end
-      if result ~= "sent" and self.Chat then self.Chat:ReportFailure(entry, result) end
+      if entry.command == "ping" then
+        if self.Chat then self.Chat:PingAnswered(result) end
+      elseif result ~= "sent" and self.Chat then
+        self.Chat:ReportFailure(entry, result)
+      end
     end
   end
   db.pending = kept

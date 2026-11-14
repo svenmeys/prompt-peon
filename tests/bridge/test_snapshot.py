@@ -120,7 +120,7 @@ class Snapshot(Base):
         refreshing.refresh(bridge)
         for path in self.wow.rglob("*"):
             if path.is_file():
-                self.assertNotIn("SECRET-TOKEN", path.read_text())
+                self.assertNotIn(b"SECRET-TOKEN", path.read_bytes())  # Bytes, because the update bells are sound files.
 
     def test_readable(self):
         self.assertEqual(gametext.readable("**bold** `code` [a](http://b)\n```py\nx\n```"), "bold code a\n\nx")

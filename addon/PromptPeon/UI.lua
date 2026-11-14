@@ -13,7 +13,6 @@ ns.UI = UI
 
 UI.PAD = 10
 UI.TINY_WIDTH = 420
-UI.BACK_WIDTH = 44
 UI.MIN_WIDTH_NO_LIST = 300 -- Small enough to park at the edge of the screen while you play.
 
 local STATUS = {
@@ -32,11 +31,6 @@ local function colored(info, text)
 end
 
 UI.Colored = colored
-
-function UI.StatusLabel(thread)
-  local info = STATUS[thread.s] or STATUS.idle
-  return colored(info, info.label)
-end
 
 -- WoW's own collapse buttons, the ones in the crafting window.
 local FOLD_OPEN = "Interface\\Buttons\\UI-MinusButton-Up"

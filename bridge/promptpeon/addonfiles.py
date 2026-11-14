@@ -6,7 +6,7 @@ import re
 import sys
 from pathlib import Path
 
-from . import console, pngtga, safefiles, savedvars, settings
+from . import bells, console, pngtga, safefiles, savedvars, settings
 
 
 def link_to_snapshot(data: Path, snapshot: Path, hard_links: bool = settings.IS_WINDOWS) -> None:
@@ -59,7 +59,7 @@ OUR_ADDONS = {settings.ADDON, *(f"{settings.ADDON}In{number:03d}" for number in 
               *(f"{settings.ADDON}Out{number:02d}" for number in range(1, settings.OUT_COUNT + 1))}
 ADDON_CODE = {
     "Snapshot.lua", "Core.lua", "CoreMarkdown.lua", "CoreIngest.lua", "CoreNotice.lua", "CoreRefresh.lua", "CoreEncode.lua", "CoreSend.lua", "CoreStartup.lua",
-    "Chat.lua", "UI.lua", "UITracker.lua", "UIMenus.lua", "UIControls.lua", "UIOptions.lua", "UIParty.lua", "UILayout.lua", "UIFrame.lua", "UIList.lua",
+    "Chat.lua", "UI.lua", "UITracker.lua", "UIMinimap.lua", "UIMenus.lua", "UIControls.lua", "UIOptions.lua", "UIParty.lua", "UILayout.lua", "UIFrame.lua", "UIList.lua",
     "UIDetail.lua", "UICanvas.lua", "UIChanges.lua", "UIPages.lua", "UIPullRequests.lua", "UIMessages.lua", "UIReply.lua", "UIRender.lua",
     "Game.lua", "GameAway.lua", "GameLoot.lua", "GameAchievements.lua", "GameSpells.lua",
 }
@@ -147,7 +147,7 @@ def install_addon(wow_dir: Path, source: Path, hard_links: bool = settings.IS_WI
     addons.mkdir(parents=True, exist_ok=True)
     target = addons / settings.ADDON
     safefiles.own_folder(target)
-    shipped = {"previews", "Snapshot.lua"}
+    shipped = {"previews", "bells", "Snapshot.lua"}
     for path in source.iterdir():
         if path.is_file() and path.name != "Snapshot.lua":
             safefiles.write_binary_atomic(target / path.name, path.read_bytes())
@@ -162,6 +162,7 @@ def install_addon(wow_dir: Path, source: Path, hard_links: bool = settings.IS_WI
         picture = previews / f"p{number:02d}.tga"
         if not picture.is_file() or safefiles.is_link(picture):
             safefiles.write_binary_atomic(picture, pngtga.blank_tga())
+    bells.make(target / "bells")  # Here, so they exist before the game starts.
     toc = target / f"{settings.ADDON}.toc"
     safefiles.write_atomic(toc, re.sub(r"^## Interface: .*$", f"## Interface: {interface}", toc.read_text(), flags=re.M))
     # Always a new file. An old one could be hard linked to anything, and Windows writes through it.

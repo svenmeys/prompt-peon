@@ -7,7 +7,7 @@ local PAD, TINY_WIDTH, MIN_WIDTH_NO_LIST = UI.PAD, UI.TINY_WIDTH, UI.MIN_WIDTH_N
 local LIST_WIDTH = 200 -- Drag the edge of the list to change it.
 local LIST_MIN_WIDTH = 120
 local DETAIL_MIN_WIDTH = 300
-local SHORT_HEIGHT = 340 -- Below this the reply box gives up some room to the thread.
+local REPLY_HEIGHT = 64
 
 --- The way back from a window that ended up somewhere you can't work with.
 function UI:ResetWindow()
@@ -93,15 +93,13 @@ end
 
 --- Fit what is inside the window to its size. Runs while you drag it.
 function UI:FitToSize()
-  local width, height = self.frame:GetSize()
+  local width = self.frame:GetWidth()
   local hidden = ns.db.listHidden
   local left = hidden and (PAD + 4) or (UI.ListWidth() + PAD + 16)
-  local short = height < SHORT_HEIGHT
-  local replyHeight = short and 40 or 64
-  self.holder:SetHeight(replyHeight)
+  self.holder:SetHeight(REPLY_HEIGHT)
   -- Above the reply box: what the agent is doing. Model and effort sit beside Send.
   local lift = self.spellLift or 0
-  local row = 44 + replyHeight + lift
+  local row = 44 + REPLY_HEIGHT + lift
   local tiny = width < TINY_WIDTH
   self.effortChip:SetWidth(tiny and 60 or 84)
   self.modelChip:SetWidth(tiny and 88 or 124)
@@ -110,7 +108,7 @@ function UI:FitToSize()
   self.activity:ClearAllPoints()
   self.activity:SetPoint("BOTTOMLEFT", self.frame, "BOTTOMLEFT", left, row)
   self.activity:SetPoint("RIGHT", self.frame, "RIGHT", -PAD - 6, 0)
-  self.detailScroll:SetPoint("BOTTOMRIGHT", self.frame, "BOTTOMRIGHT", -PAD - 22, 62 + replyHeight + lift)
+  self.detailScroll:SetPoint("BOTTOMRIGHT", self.frame, "BOTTOMRIGHT", -PAD - 22, 62 + REPLY_HEIGHT + lift)
   self.send:SetWidth(tiny and 60 or 90)
 
   self:PlaceHeaderButtons()
@@ -162,6 +160,7 @@ function UI:ApplyLayout()
   local listWidth = UI.ListWidth()
   local left = hidden and (PAD + 4) or (listWidth + PAD + 16)
   self.listScroll:SetShown(not hidden)
+  self.filterBox:SetShown(not hidden)
   self.listScroll:SetWidth(listWidth)
   self.listContent:SetWidth(listWidth)
   self.listEdge:SetShown(not hidden)

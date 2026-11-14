@@ -41,7 +41,9 @@ end
 --- An open question's answers, as the companion app sent them, checked here because a bad shape
 --- must draw as words and never break the log. Nil means show the question as words.
 function UI.QuestionChoices(value)
-  if type(value) ~= "table" or type(value.r) ~= "string" or #value.r ~= 8 or not value.r:match("^%x+$") then return nil end
+  -- The mark is a fingerprint of the question and its answers, 32 characters. A shorter one is from
+  -- a companion app that only marked the question's id, and that isn't enough to answer by number.
+  if type(value) ~= "table" or type(value.r) ~= "string" or #value.r ~= 32 or not value.r:match("^%x+$") then return nil end
   if type(value.q) ~= "table" or #value.q == 0 or #value.q > 4 then return nil end
   for _, question in ipairs(value.q) do
     if type(question) ~= "table" or type(question.t) ~= "string" or type(question.h) ~= "string" or type(question.o) ~= "table" then return nil end
@@ -61,7 +63,44 @@ function UI.OpenQuestion(thread)
   end
 end
 
+--- What this thread is asking to be allowed to do, if yolo mode lets the game answer it: the
+--- request's mark and its words. Nil with yolo mode off, and for anything the game can't answer.
+--- With several open at once it is the newest, which is the one T3 and the companion app wait on.
+function UI.OpenApproval(thread)
+  if not thread or thread.s ~= "needs" or thread.uq or not (ns.snapshot and ns.snapshot.yo) then return nil end
+  local rows = thread.m or {}
+  for index = #rows, 1, -1 do
+    local row = rows[index]
+    if row[1] == "p" and row[3] == "r" then
+      -- The mark stands for the request and every word shown, so only a whole one counts.
+      local with = type(row[5]) == "table" and row[5] or {}
+      local mark = with.r
+      if type(mark) == "string" and #mark == 32 and mark:match("^%x+$") and type(row[2]) == "string" and type(with.k) == "string"
+        and (with.y == nil or type(with.y) == "string") then
+        -- The request, what kind of thing it is, and the agent's own reason, each kept apart.
+        return { r = mark, text = row[2], what = with.k, why = with.y }
+      end
+      return nil
+    end
+  end
+end
+
 UI.answers, UI.answerSent = {}, {}
+
+--- True for a while after an answer or a decision went, so its buttons can't be pressed twice.
+function UI:JustSent(mark)
+  local sent = self.answerSent[mark]
+  return sent ~= nil and GetTime() - sent < STEER_SHOWS_FOR
+end
+
+--- Yolo mode: Approve or Decline what the agent asks to do. The companion app decides whether it goes.
+function UI:SendApproval(thread, approval, decision)
+  if self:JustSent(approval.r) then return false end
+  if not ns:QueueCommand(thread.id, "approve", approval.r .. "\n" .. decision) then return false end
+  self.answerSent[approval.r] = GetTime()
+  self:Render()
+  return true
+end
 
 --- What you have picked so far. A new question starts fresh.
 function UI:AnswerFor(threadId, choices)
@@ -141,11 +180,14 @@ function UI:RenderDetail(thread)
   for _, head in ipairs(self.heads) do head:Hide() end
   for _, bar in ipairs(self.bars or {}) do bar:Hide() end
   for _, pic in ipairs(self.pictures or {}) do pic:Hide() end
+  for _, scroller in ipairs(self.tableScrollers or {}) do
+    scroller:Hide()
+    scroller.slider:Hide()
+  end
   for _, button in ipairs(self.queueButtons or {}) do button:Hide() end
   if self.optionsPage then self.optionsPage:Hide() end
 
   if not thread then
-    self.back:Hide()
     self.title:SetText("")
     self.meta:SetText("")
     self.empty:SetText(ns.snapshot and not ns.snapshot.quiet and "No open threads. " .. ns:Workers().idle or "Waiting for the companion app.")
@@ -175,11 +217,28 @@ function UI:RenderDetail(thread)
   local canvas = self:NewCanvas(width)
   local add, addChunks, drawMarkdown, foldingHead = canvas.add, canvas.addChunks, canvas.drawMarkdown, canvas.foldingHead
   local queueButtons = 0
+  -- One clickable line, the way a quest offers its rewards: an answer to pick, or Approve and Decline.
+  -- `what` names the thing a click does. A line is reused as the thread redraws, and a press that
+  -- began on one thing must not land on another.
+  local function choiceLine(words, picked, onClick, what)
+    canvas.heads = canvas.heads + 1
+    local head = self:GroupHead(canvas.heads)
+    head.key, head.open = "answer:" .. (what or canvas.heads), false
+    showFold(head, nil)
+    head:ClearAllPoints()
+    head:SetPoint("TOPLEFT", self.detailContent, "TOPLEFT", 8, -canvas.y)
+    head:SetSize(width - 12, 16)
+    head.text:SetText((picked and "|cffffd100" or "|cffe0ddd0") .. words .. "|r")
+    head.onClick = onClick
+    head:Show()
+    canvas.y = canvas.y + 18
+  end
 
   if thread.s == "needs" then
     add(thread.nb and "This agent asked you something. Your reply here answers it."
       or thread.uq and UI.OpenQuestion(thread) and "This agent is asking you something. Pick your answer below."
       or thread.uq and "This agent is asking you something. Answer it in T3. A reply here only queues a message."
+      or UI.OpenApproval(thread) and "This agent is waiting for your approval. Read what it asks, then Approve or Decline below."
       or "This agent is waiting for your approval. Answer it in T3. A reply here only queues a message.", 1.0, 0.66, 0.26)
     canvas.y = canvas.y + 6
   end
@@ -251,20 +310,24 @@ function UI:RenderDetail(thread)
   elseif ns.Game then
     ns.Game:MarkSeen(thread)
   end
-  self.back:SetShown((page or view) and true or false)
-  self.changes:SetShown(not page and (thread.ch ~= nil or thread.cd or kept.df ~= nil or view == "changes"))
-  self.changes.label = view == "changes" and "Back to thread" or (kept.df and #kept.df > 0) and ("Changes (" .. #kept.df .. ")") or "Changes"
-  self.changes.detail = view == "changes" and "Back to what it said." or "What this thread changed, file by file."
-  self.pullRequests:SetShown(not page and (thread.prs ~= nil or view == "prs"))
-  self.pullRequests.label = view == "prs" and "Back to thread" or ("Pull requests (" .. #(thread.prs or {}) .. ")")
-  self.pullRequests.detail = view == "prs" and "Back to what it said." or UI.PullRequestSummary(thread.prs or {})
-  if view == "prs" then self.pullRequests:LockHighlight() else self.pullRequests:UnlockHighlight() end
-  self.agents:SetShown(not page and (thread.ag ~= nil or view == "agents"))
-  self.agents.label = view == "agents" and "Back to thread" or ("Agents (" .. (thread.agn or 0) .. ")")
-  self.agents.detail = view == "agents" and "Back to what it said." or "Who it sent out, and what they came back with."
-  -- Pressed in while you're looking at it, the way the game shows an open tab.
-  if view == "changes" then self.changes:LockHighlight() else self.changes:UnlockHighlight() end
-  if view == "agents" then self.agents:LockHighlight() else self.agents:UnlockHighlight() end
+  -- The open thread's tabs. They stay put whatever page is open, and each is pressed in while
+  -- you're looking at its view. There is no Back button: the pressed tab is the way back.
+  local threadView = self.views[thread.id]
+  local function viewTab(tab, name, shown, label, count, detail)
+    local showing = not page and threadView == name
+    tab:SetShown(shown or false)
+    tab:SetChecked(showing)
+    tab.label = label
+    tab.detail = showing and "Click again to see what it said." or detail
+    tab.count:SetText(count > 0 and count or "")
+  end
+  local files, pulls, sent = kept.df and #kept.df or 0, #(thread.prs or {}), thread.agn or 0
+  viewTab(self.changes, "changes", thread.ch ~= nil or thread.cd or kept.df ~= nil or threadView == "changes",
+    files > 0 and ("Changes (" .. files .. ")") or "Changes", files, "What this thread changed, file by file.")
+  viewTab(self.pullRequests, "prs", thread.prs ~= nil or threadView == "prs",
+    "Pull requests (" .. pulls .. ")", pulls, UI.PullRequestSummary(thread.prs or {}))
+  viewTab(self.agents, "agents", thread.ag ~= nil or threadView == "agents",
+    "Agents (" .. sent .. ")", sent, "Who it sent out, and what they came back with.")
   self:PlaceHeaderButtons()
   if options then
     if not self.optionsPage then self:BuildOptionsPage() end
@@ -365,12 +428,36 @@ function UI:RenderDetail(thread)
       head.text:SetText(string.format("|cff%02x%02x%02xAgent: %s (%s)|r", style.r * 255, style.g * 255, style.b * 255, ns.Plain(row[2]), words))
       head:Show()
       canvas.y = canvas.y + 17
-      if isOpen and row[5] then drawMarkdown(row[5]) end
+      if isOpen and row[5] then drawMarkdown(row[5], key) end
       canvas.y = canvas.y + 4
       lastRole = nil
       position = position + 1
     elseif row[1] == "i" then
       drawPicture(row)
+      lastRole = nil
+      position = position + 1
+    elseif row[1] == "p" then
+      -- What it wants to do, as plain words and never as Markdown: this is read before it's approved.
+      -- The request is in the code font. The agent's reason comes after, grey, under its own
+      -- heading, so nothing written inside a request can pass for a reason.
+      local with = type(row[5]) == "table" and row[5] or {}
+      add("The agent is asking for your approval" .. (type(with.k) == "string" and (" to " .. ns.Plain(with.k)) or "") .. ":", 1.0, 0.66, 0.26)
+      addChunks(row[2], 1.0, 0.85, 0.60, "PromptPeonCode")
+      if type(with.y) == "string" and with.y ~= "" then
+        add("Why it says it needs this (this part is not what runs):", 0.62, 0.60, 0.54, "PromptPeonSmall")
+        addChunks(with.y, 0.62, 0.60, 0.54, "PromptPeonSmall")
+      end
+      local approval = UI.OpenApproval(thread)
+      local mark = with.r
+      if not approval or approval.r ~= mark then
+        add("Approve it in T3.", 0.62, 0.60, 0.54, "PromptPeonSmall")
+      elseif self:JustSent(approval.r) then
+        add("Sent. The agent goes on when T3 has it.", 0.62, 0.60, 0.54, "PromptPeonSmall")
+      else
+        choiceLine(">> Approve", true, function() UI:SendApproval(thread, approval, "accept") end, approval.r .. ":accept")
+        choiceLine("Decline", false, function() UI:SendApproval(thread, approval, "decline") end, approval.r .. ":decline")
+      end
+      canvas.y = canvas.y + 8
       lastRole = nil
       position = position + 1
     elseif row[1] == "q" then
@@ -379,46 +466,31 @@ function UI:RenderDetail(thread)
       if not choices then
         addChunks(row[2], 1.0, 0.85, 0.60)
       else
-        -- One clickable line per answer, the way a quest offers its rewards.
         local answer = self:AnswerFor(thread.id, choices)
-        local function choiceLine(words, picked, onClick)
-          canvas.heads = canvas.heads + 1
-          local head = self:GroupHead(canvas.heads)
-          head.key, head.open = "answer:" .. canvas.heads, false
-          showFold(head, nil)
-          head:ClearAllPoints()
-          head:SetPoint("TOPLEFT", self.detailContent, "TOPLEFT", 8, -canvas.y)
-          head:SetSize(width - 12, 16)
-          head.text:SetText((picked and "|cffffd100" or "|cffe0ddd0") .. words .. "|r")
-          head.onClick = onClick
-          head:Show()
-          canvas.y = canvas.y + 18
-        end
         for index, question in ipairs(choices.q) do
           if #choices.q > 1 and question.h ~= "" then add(ns.Plain(question.h), 0.80, 0.68, 0.30, "PromptPeonSmall") end
           addChunks(question.t, 1.0, 0.85, 0.60)
           for number, option in ipairs(question.o) do
             local picked = answer.picks[index][number]
             local mark = question.m and (picked and "[x] " or "[  ] ") or (picked and "(o) " or "(  ) ")
-            choiceLine(mark .. ns.Plain(option[1]), picked, function() UI:PickAnswer(thread, choices, index, number) end)
+            choiceLine(mark .. ns.Plain(option[1]), picked, function() UI:PickAnswer(thread, choices, index, number) end, choices.r .. ":" .. index .. ":" .. number)
             if option[2] ~= "" then add(ns.Plain(option[2]), 0.62, 0.60, 0.54, "PromptPeonSmall", 34) end
           end
           if question.c then
             local typed = answer.typed[index]
             choiceLine(typed and ("(o) Your own answer: " .. ns.Plain(typed)) or "(  ) Something else. Type your own answer",
-              typed ~= nil, function() UI:TypeAnswer(thread, choices, index) end)
+              typed ~= nil, function() UI:TypeAnswer(thread, choices, index) end, choices.r .. ":" .. index .. ":type")
           end
           canvas.y = canvas.y + 4
         end
         -- One Send takes every question's answer, so with several it says so.
         local count = #choices.q
-        local sent = self.answerSent[choices.r]
-        if sent and GetTime() - sent < STEER_SHOWS_FOR then
+        if self:JustSent(choices.r) then
           add((count == 1 and "Answer sent" or count == 2 and "Both answers sent" or "All " .. count .. " answers sent")
             .. ". The agent goes on when T3 has " .. (count == 1 and "it." or "them."), 0.62, 0.60, 0.54, "PromptPeonSmall")
         elseif UI.AnswerReady(choices, answer) then
           choiceLine(count == 1 and ">> Send your answer" or count == 2 and ">> Send both answers" or ">> Send all " .. count .. " answers",
-            true, function() UI:SendAnswer(thread, choices) end)
+            true, function() UI:SendAnswer(thread, choices) end, choices.r .. ":send")
         else
           add(count > 1 and "Pick an answer for each question, then send them together." or "Pick an answer, then send it.", 0.62, 0.60, 0.54, "PromptPeonSmall")
         end
@@ -476,7 +548,7 @@ function UI:RenderDetail(thread)
           x = x + 19
         end
       elseif row[1] == "a" then
-        drawMarkdown(row[2])
+        drawMarkdown(row[2], thread.id .. ":" .. tostring(row[4] or position))
       else
         addChunks(row[2], queued and 0.75 or 0.95, queued and 0.73 or 0.93, queued and 0.65 or 0.85)
       end

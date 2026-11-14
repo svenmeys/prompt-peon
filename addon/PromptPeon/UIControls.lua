@@ -2,7 +2,7 @@
 
 local _, ns = ...
 local UI = ns.UI
-local PAD, BACK_WIDTH = UI.PAD, UI.BACK_WIDTH
+local PAD = UI.PAD
 
 function UI:SetProjectHidden(project, hidden)
   ns.db.hiddenProjects[project] = hidden or nil
@@ -72,13 +72,8 @@ end
 
 --- The thread's name gets whatever the icons leave, and an icon that doesn't apply leaves no gap.
 function UI:PlaceHeaderButtons()
-  self.back:ClearAllPoints()
-  self.back:SetPoint("TOPLEFT", self.top, "BOTTOMLEFT", self.titleLeft, 0)
-  local back = self.back:IsShown()
-  self.title:SetPoint("TOPLEFT", self.top, "BOTTOMLEFT", self.titleLeft + (back and BACK_WIDTH + 6 or 0), -2)
-  -- Only the title moves over. What's below hangs off this line, and would otherwise move with it.
-  self.meta:SetPoint("TOPLEFT", back and self.back or self.title, "BOTTOMLEFT", 0, back and -2 or -4)
-  local step, buttons = 26, { self.changes, self.pullRequests, self.agents, self.hideButton, self.snoozeButton, self.secondary, self.primary }
+  self.title:SetPoint("TOPLEFT", self.top, "BOTTOMLEFT", self.titleLeft, -2)
+  local step, buttons = 26, { self.hideButton, self.snoozeButton, self.secondary, self.primary }
   local shown = 0
   for _, button in ipairs(buttons) do
     if button:IsShown() then shown = shown + 1 end
@@ -94,35 +89,54 @@ function UI:PlaceHeaderButtons()
   end
 end
 
---- Who's rolling on your attention.
-function UI.Rolls(kind)
-  local rolls = {}
+--- The threads waiting on you for an answer or an approval, in list order.
+function UI.Waiting()
+  local waiting = {}
   for _, thread in ipairs(ns:VisibleThreads()) do
-    if kind == "need" and thread.s == "needs" then rolls[#rolls + 1] = thread end
-    if kind == "greed" and thread.s == "done" and ns.Game and ns.Game.IsUnread(thread) then rolls[#rolls + 1] = thread end
+    if thread.s == "needs" then waiting[#waiting + 1] = thread end
   end
-  return rolls
+  return waiting
 end
 
-function UI:NextRoll(kind)
-  local rolls = UI.Rolls(kind)
-  if #rolls == 0 then return end
-  local pick = rolls[1]
-  for index, thread in ipairs(rolls) do
-    if thread.id == ns.db.selected then pick = rolls[index % #rolls + 1] end
+--- Open the next thread waiting on you, round and round. What the key binding does.
+function UI:NextWaiting()
+  local waiting = UI.Waiting()
+  if #waiting == 0 then
+    if ns.Chat then ns.Chat:ReportReload("Nobody is waiting on you.") end
+    return
+  end
+  local pick = waiting[1]
+  for index, thread in ipairs(waiting) do
+    if thread.id == ns.db.selected and self:IsOpen() then pick = waiting[index % #waiting + 1] end
   end
   self:OpenThread(pick.id)
 end
 
+--- Open the log with the cursor in the reply box. What the other key binding does.
+--- The cursor goes there a moment later, once the game is done with the key you pressed. Given the
+--- keyboard straight away, the box could get that same key: a letter typed into your reply, or Enter sending it.
+function UI:StartReply()
+  if not self.frame or InCombatLockdown() then return end
+  if not self:IsOpen() then self.frame:Show() end
+  C_Timer.After(0, function()
+    if UI:IsOpen() and not InCombatLockdown() then UI.input.EditBox:SetFocus() end
+  end)
+end
+
 UI.sideTabTop = -36 -- Just under the title bar, where the spellbook starts its tabs.
 UI.sideTabPitch = 49 -- The spellbook's: its tab art is 56 tall, so closer and the plates overlap.
+UI.sideTabGap = 8 -- Between the pages and the open thread's own tabs.
 
---- Stacks the shown tabs down the right edge, so a missing one leaves no hole.
--- Three of them reach 179 down, art included, inside the smallest window (240).
+--- Stacks the shown tabs down the right edge, so a missing one leaves no hole: the pages first, then,
+--- after a gap, the open thread's. UIFrame.lua's MIN_HEIGHT is what all six need.
 function UI:PlaceSideTabs()
-  local y = UI.sideTabTop
+  local y, gapped = UI.sideTabTop, false
   for _, tab in ipairs(self.sideTabs) do
     if tab:IsShown() then
+      if tab.ofThread and not gapped then
+        gapped = true
+        if y ~= UI.sideTabTop then y = y - UI.sideTabGap end
+      end
       tab:ClearAllPoints()
       tab:SetPoint("TOPLEFT", self.frame, "TOPRIGHT", 0, y)
       y = y - UI.sideTabPitch
@@ -130,7 +144,7 @@ function UI:PlaceSideTabs()
   end
 end
 
---- Each tab is pressed while its page is open. The dice stay grey and faint until someone's rolling.
+--- Each page's tab is pressed while its page is open. RenderDetail sets the open thread's own tabs.
 function UI:RenderSideTabs()
   if not self.sideTabs then return end
   local game = ns.Game
@@ -147,17 +161,11 @@ function UI:RenderSideTabs()
   light(self.achievementsIcon, self.showAchievements and true or false)
   self.options:SetChecked(self.showOptions and true or false)
   light(self.options, true)
-  for kind, button in pairs({ need = self.needIcon, greed = self.greedIcon }) do
-    local count = #UI.Rolls(kind)
-    light(button, count > 0)
-    button.count:SetText(count > 0 and count or "")
-  end
   self:PlaceSideTabs()
 end
 
 --- Which buttons the open thread gets, and what each one says in its current state.
 function UI:RenderControls(thread)
-  self:RenderSideTabs()
   local onPage = self.newThread or self.showOptions or self.showAchievements or (self.showReport and ns.Game and ns.Game.report)
   local open = thread and not onPage
   -- A thread you followed a link to isn't on your list, so there's nothing to turn in or reopen.
@@ -198,10 +206,14 @@ function UI:RenderControls(thread)
       set(self.hideButton, "Icons\\Ability_Stealth", "Hide", "Hide it. Only its title and status stay in the game.")
     end
   end
-  if not open then
+  -- The open thread's tabs stay while a page is open, so nothing on the edge moves when you
+  -- press one. They only go when there is no thread to have them.
+  if not thread then
     self.changes:Hide()
+    self.pullRequests:Hide()
     self.agents:Hide()
   end
+  self:RenderSideTabs()
   self:PlaceHeaderButtons()
 
   local current = (not onPage or self.newThread) and self:ModelTarget(thread) or nil
@@ -217,22 +229,6 @@ function UI:RenderControls(thread)
   else
     self.modelChip:SetPoint("RIGHT", self.effortChip, "RIGHT", 0, 0)
   end
-end
-
---- Out of whatever page is open, one level at a time.
-function UI:GoBack()
-  local id = ns.db.selected
-  if self.newThread then
-    self:StopNewThread()
-  elseif self.showOptions or self.showAchievements or self.showReport then
-    self.showOptions, self.showAchievements, self.showReport = nil, nil, nil
-  elseif id and self.views[id] == "prs" and self.prOpen[id] then
-    self.prOpen[id] = nil
-  elseif id then
-    self.views[id] = nil
-    self.shownThread = nil
-  end
-  self:Render()
 end
 
 StaticPopupDialogs["PROMPTPEON_ABANDON"] = {

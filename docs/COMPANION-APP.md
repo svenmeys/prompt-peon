@@ -20,7 +20,7 @@ The small program that runs next to WoW and talks to T3 for the addon. This page
 | Runs as | `pythonw`, so no window | `python3`, restarted if it stops |
 | Needs admin | No | No |
 
-It's always running but idle until it sees the game, in any client it was installed into. It serves one game at a time, so if two are open, the second waits until the first closes. It looks every 5 seconds. While the game runs, it asks T3 for changes every 5 seconds, or every 15 over T3 Connect, and checks for replies every second. Only one copy can run at a time.
+It's always running but idle until it sees the game, in any client it was installed into. It serves one game at a time, so if two are open, the second waits until the first closes. It looks every 5 seconds. While the game runs, it asks T3 for changes every 5 seconds, or every 15 over T3 Connect, and looks 50 times a second at whether the file your replies travel in has changed, reading it only when it has. Only one copy can run at a time.
 
 macOS isn't supported.
 
@@ -28,14 +28,14 @@ macOS isn't supported.
 
 | Where | What | Sensitive? |
 | --- | --- | --- |
-| Config folder: `%APPDATA%\prompt-peon` or `~/.config/prompt-peon` | `token`, your access to T3, and `token-local` for the T3 on this machine if you show both. Owner-only on Linux. `config.json`: T3's address, the WoW folder, the addons you trust, whether pictures are on | **Yes.** Don't share this folder |
+| Config folder: `%APPDATA%\prompt-peon` or `~/.config/prompt-peon` | `token`, your access to T3, and `token-local` for the T3 on this machine if you show both. Owner-only on Linux. `config.json`: T3's address, the WoW folder, the addons you trust, whether pictures are on, whether yolo mode is on, and when a token from this machine's T3 was last renewed | **Yes.** Don't share this folder |
 | State folder: `%LOCALAPPDATA%\prompt-peon` or `~/.local/state/prompt-peon` | `state.json`: what's been sent and what you hid. `sent.log`: time, thread id, length and whether each send worked, never the words. It rolls over at 1 MB. `previews.json`, a lock file and a process id | Thread ids, project names you hid, picture paths and checksums of what you sent. Not your words |
 | Program folder: `%LOCALAPPDATA%\prompt-peon` or `~/.local/share/prompt-peon` | A copy of the companion app and the setup and removal scripts, so you can delete the download | No |
-| `Interface/AddOns/PromptPeon*` in the WoW folder | The addon, 1,096 helper addons and 64 picture files | `Snapshot.lua` holds thread text while the game runs, and any addon can read it |
+| `Interface/AddOns/PromptPeon*` in the WoW folder | The addon, 1,096 helper addons, 64 picture files and 9 silent sound files | `Snapshot.lua` holds thread text while the game runs, and any addon can read it |
 | `WTF/Account/*/SavedVariables/PromptPeon.lua` and its `.bak` | Read, as the fallback way to get replies out. Once the game has closed and any last reply has gone, it removes drafts and unsent messages and leaves the rest alone. The game writes it | **Yes,** while the game is open. It can hold drafts and unsent messages |
 | `AddOns.txt` under `WTF/Account` | Read, to get replies out. The game writes it | Only what's being sent right now |
 
-It doesn't read anything else in your WoW folder, except the list of addon folders, its own addon files to check nothing changed them, and `.build.info` to learn the game version. Outside these places it looks at the process list, to see whether the game is running. During setup it also looks for WoW and may run the `t3` program on this machine to get a token.
+It doesn't read anything else in your WoW folder, except the list of addon folders, its own addon files to check nothing changed them, and `.build.info` to learn the game version. Outside these places it looks at the process list, to see whether the game is running. During setup it also looks for WoW and may run the `t3` program on this machine to get a token. If it got one that way, it runs `t3` again about every three weeks to renew it, with the same access and nothing more.
 
 ## What it sends, and to whom
 
@@ -88,6 +88,7 @@ The installer copies the app to the program folder above. From there:
     python3 promptpeon_bridge.py run         # run in the foreground
     python3 promptpeon_bridge.py start-stop  # turn it off if it's running, and on if it isn't
     python3 promptpeon_bridge.py trust MyAddon  # trust an addon by its folder name, no restart needed
+    python3 promptpeon_bridge.py yolo on     # let the game approve what agents ask to do; yolo off takes it back
     python3 promptpeon_bridge.py uninstall   # remove everything
 
 The installer takes `--client era|retail|forever`, `--wow-dir`, `--link`, `--url`, `--pictures`, `--no-pictures`, `--full-access`, `--no-full-access`, `--no-start`, `--allow-unencrypted` and `--no-update`.

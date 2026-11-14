@@ -193,7 +193,7 @@ Linux:    python3 -I ~/.local/share/prompt-peon/bridge/promptpeon_bridge.py stat
 
 | Route | Encrypted | Who can use a stolen token | How long the token lasts |
 | --- | --- | --- | --- |
-| Same machine | Stays on the machine | Anyone on that machine | 1 year |
+| Same machine | Stays on the machine | Anyone on that machine | 30 days, renewed by itself a week before it runs out |
 | T3 Connect | Yes | Anyone, from any network | 30 days |
 | Tailscale | Yes | Anyone on your Tailscale network | 30 days |
 | SSH tunnel | Yes, between the machines | Anyone on the game machine while the tunnel runs | 30 days |

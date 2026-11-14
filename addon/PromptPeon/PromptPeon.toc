@@ -6,6 +6,7 @@
 ## SavedVariables: PromptPeonDB, PromptPeonOutbox
 ## IconTexture: Interface\QuestFrame\UI-QuestLog-BookIcon
 ## Category: Prompt Peon
+## AddonCompartmentFunc: PromptPeon_Toggle
 
 Snapshot.lua
 Core.lua
@@ -19,6 +20,7 @@ CoreStartup.lua
 Chat.lua
 UI.lua
 UITracker.lua
+UIMinimap.lua
 UIMenus.lua
 UIControls.lua
 UIOptions.lua

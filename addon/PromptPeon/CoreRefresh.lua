@@ -1,5 +1,6 @@
 -- Refresh: spends refresh slots at a pace that makes them last, and says when the budget or the
 -- bridge is running out. Each load re-reads Snapshot.lua, so it's the only way new data gets in.
+-- The update bell, further down, says when a load is worth it right now.
 
 local addonName, ns = ...
 
@@ -96,7 +97,7 @@ function ns:NeedsReload()
   if self.liveProblem then return true end
   if self:ReloadIn() <= self.RELOAD_SOON then return true end
   local first = self.db and self.db.pending[1]
-  return first ~= nil and first.stuck == true
+  return first ~= nil and (first.stuck == true or not self:CanSendSilently())
 end
 
 --- Spend one slot to re-read Snapshot.lua. Slots only come back with a reload.
@@ -125,6 +126,81 @@ function ns:Refresh()
   self.loadFailures = 0
   self.liveProblem = nil
   return self:Ingest()
+end
+
+-- --- The update bell ----------------------------------------------------------------
+-- An addon can't read a file, but it can play a sound and ask whether it is really playing, and an
+-- empty file doesn't play. The companion app keeps one of eight silent sound files real: the one
+-- for the count in the newest snapshot. So when the bell for the snapshot we have goes quiet,
+-- a newer one is waiting, and it's worth a refresh now and not at the next tick. A ninth file is
+-- always real, to tell "no news" from "the game's sound is off", where nothing plays at all.
+-- Measured on WoW Forever, 2026-11-13. The companion app's side is bells.py.
+
+ns.BELL_COUNT = 8 -- Keep equal to BELL_COUNT in the companion app.
+local BELL_ANSWER = 0.2 -- Seconds between playing a sound and asking whether it plays.
+local BELL_GAP = 2 -- Never refresh for the bell more often than this.
+local BELL_FALSE_ALARMS = 3 -- After this many rings with no news behind them, stop listening.
+local BELL_BUDGET, BELL_BUDGET_SECONDS = 20, 600 -- The most refreshes the bell may ask for, and over how long.
+
+local function bellFile(name)
+  return "Interface\\AddOns\\" .. addonName .. "\\bells\\" .. name .. ".wav"
+end
+
+local function playing(handle)
+  if not handle then return false end
+  local ok, is = pcall(C_Sound.IsPlaying, handle)
+  pcall(StopSound, handle)
+  return ok and is == true
+end
+
+--- Once a second: is the bell for the snapshot we have still ringing? Costs no refresh.
+function ns:Listen()
+  if self.hearing or self.bellBroken or not self.db or self.db.bellOff or InCombatLockdown() then return end
+  local count = tonumber(self.snapshot and self.snapshot.sg)
+  if not count or not (C_Sound and C_Sound.IsPlaying and PlaySoundFile and StopSound) then return end
+  local okAlways, _, always = pcall(PlaySoundFile, bellFile("on"), "Master")
+  local okBell, _, bell = pcall(PlaySoundFile, bellFile("b" .. (count % self.BELL_COUNT + 1)), "Master")
+  self.hearing = true
+  C_Timer.After(BELL_ANSWER, function()
+    self.hearing = nil
+    local hears, rings = playing(okAlways and always), playing(okBell and bell)
+    self.bellWorks = hears
+    if hears and not rings then self:HeardNews(count) end
+  end)
+end
+
+--- The bell went quiet, so spend one refresh now. If the snapshot that loads is the one we had,
+--- the bell lied, and a bell that keeps lying would use up every refresh, so it gets three tries.
+function ns:HeardNews(count)
+  if InCombatLockdown() or self.liveProblem or GetTime() - self.lastRefresh < BELL_GAP then return end
+  -- Even true news is only worth so many refreshes. Agents flapping between states, or a server that
+  -- wants to, would otherwise use them up far faster than the timer does. Past the budget the timer
+  -- carries on as before.
+  local now, spent = GetTime(), {}
+  for _, at in ipairs(self.bellSpent or {}) do
+    if now - at < BELL_BUDGET_SECONDS then spent[#spent + 1] = at end
+  end
+  self.bellSpent = spent
+  if #spent >= BELL_BUDGET then return end
+  spent[#spent + 1] = now
+  self:Refresh()
+  if tonumber(self.snapshot and self.snapshot.sg) == count then
+    self.bellFalse = (self.bellFalse or 0) + 1
+    if self.bellFalse >= BELL_FALSE_ALARMS then self.bellBroken = true end
+  else
+    self.bellFalse = 0
+  end
+  if self.UI then self.UI:Render() end
+end
+
+--- For the connection check: whether fast updates are working, in words.
+function ns:BellWords()
+  if self.db.bellOff then return "off. Turn them on in Options." end
+  if self.bellBroken then return "off until you reload: the bell rang three times with no news behind it (false alarms)." end
+  if not tonumber(self.snapshot and self.snapshot.sg) then return "off: this companion app is from before them. Run the installer again." end
+  if self.bellWorks == false then return "off: the game can't hear the bell. Is game sound on?" end
+  if self.bellWorks == nil then return "not heard yet. Ask again in a few seconds." end
+  return "on. News shows within a second or two."
 end
 
 --- Runs every 5 seconds and decides whether this moment is worth a slot.
