@@ -340,6 +340,7 @@ function UI:ReplyState(thread)
   for _, entry in ipairs(ns.db.pending) do
     if entry.thread == thread.id then
       if ns.db.pending[1].stuck then return "The companion app is not answering. Your reply is saved. Press Reload UI to send it." end
+      if not ns:CanSendSilently() then return ns.WAITING_FOR_RESTART end
       if InCombatLockdown() then return "Held until the fight ends." end
       return "Sending..."
     end

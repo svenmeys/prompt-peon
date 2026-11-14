@@ -10,6 +10,7 @@ local LINK_OWNER = "peon"
 local COLOR = "|cff66ccff"
 local CHAT_LINE_BYTES = 400
 local COLOR_GOLD = "|cffffd100"
+local COLOR_GOOD, COLOR_BAD = "|cff73cc73", "|cffe65c4d" -- The log's own green for done and red for failed.
 
 local NEWS_TAB = "Peon"
 
@@ -119,28 +120,66 @@ function Chat:Undo(id)
   if known then ns.db.lastSettled = nil end -- A second click has nothing left to undo.
 end
 
-function Chat:List()
-  local threads = ns:VisibleThreads()
-  if #threads == 0 then
-    say("No open threads.")
-    return
-  end
-  for _, thread in ipairs(threads) do
-    say(threadLink(thread) .. " " .. (ns.UI and ns.UI.StatusLabel(thread) or thread.s))
-  end
-end
-
 function Chat:ReportReload(words)
   say(words)
 end
 
-function Chat:Status()
+--- Walks the chain one link at a time, from the companion app to sending, and says for each whether
+--- it works. The first broken one gets what to do about it. What the button in Options does.
+function Chat:CheckConnection()
+  if InCombatLockdown() then
+    say("You're in combat. Check the connection after the fight.")
+    return
+  end
+  say("Checking the connection.")
+  ns:Refresh() -- One update, so this is about now and not about a while ago.
+  local snapshot = ns.snapshot
+  if not snapshot or snapshot.quiet or ns.snapshotAge > ns.BRIDGE_QUIET_AFTER then
+    say("1. Companion app: " .. COLOR_BAD .. "not answering.|r Close the game, run the installer again, then start the game.")
+    say("The rest can't be checked until it answers.")
+    return
+  end
+  say("1. Companion app: " .. COLOR_GOOD .. "running.|r Last heard " .. ns.Ago(time() - (snapshot.at or 0)) .. ".")
+  if snapshot.err and snapshot.err ~= "" then
+    say("2. T3: " .. COLOR_BAD .. ns.Plain(snapshot.err) .. "|r")
+  else
+    say("2. T3: " .. COLOR_GOOD .. "connected.|r")
+  end
   local seconds, left = ns:ReloadIn()
-  local updated = ns.snapshot and ns.Ago(time() - (ns.snapshot.at or 0)) or "never"
-  say(string.format("%d live updates left before you need a reload, %s at this pace. The last one took %.1f ms. Companion app last heard %s.",
-    left, ns.AboutTime(seconds), ns.lastLoadMs or 0, updated))
-  if ns.worstSaveMs then
-    say(string.format("Sending: the last step took %.1f ms, the slowest %.1f ms.", ns.lastSaveMs, ns.worstSaveMs))
+  if ns.liveProblem then
+    say("3. Live updates: " .. COLOR_BAD .. ns.liveProblem .. "|r")
+  else
+    say(string.format("3. Live updates: %s%d left,|r %s at this pace. The last one took %.1f ms.",
+      left > 0 and COLOR_GOOD or COLOR_BAD, left, ns.AboutTime(seconds), ns.lastLoadMs or 0))
+  end
+  say("Fast updates: " .. ns:BellWords())
+  if snapshot.lk then say("An addon you haven't trusted is in the way: " .. ns.Plain(snapshot.lk)) end
+  local first = ns.db.pending[1]
+  if not ns:CanSendSilently() then
+    say("4. Sending from the game: " .. COLOR_BAD .. "waits for a restart.|r The game hasn't restarted since you installed or updated. Until then, Reload UI in the log sends what is saved.")
+  elseif first and first.stuck then
+    say("4. Sending from the game: " .. COLOR_BAD .. "the companion app is not answering your last message.|r Press Reload UI in the log to send it.")
+  elseif self.pingAt then
+    say("4. Sending from the game: still waiting for the answer to the last check.")
+  elseif ns:QueueCommand("settings", "ping") then
+    self.pingAt = GetTime()
+    say("4. Sending from the game: asking the companion app. The answer comes in a few seconds.")
+  end
+end
+
+--- The companion app answered the check, or never did.
+function Chat:PingAnswered(result)
+  local took = GetTime() - (self.pingAt or GetTime())
+  self.pingAt = nil
+  if result == "sent" then
+    say(string.format("4. Sending from the game: %sworks.|r Answered in %.1f seconds.", COLOR_GOOD, took))
+    if ns.worstSaveMs then
+      say(string.format("Each step of a send took %.1f ms at most.", ns.worstSaveMs))
+    end
+  elseif result then
+    say("4. Sending from the game: " .. COLOR_BAD .. ns.Plain((result:gsub("^failed: ", ""))) .. "|r")
+  else
+    say("4. Sending from the game: " .. COLOR_BAD .. "the companion app didn't hear it.|r Restart the game. If it stays this way, close the game and run the installer again.")
   end
 end
 

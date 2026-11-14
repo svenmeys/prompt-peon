@@ -216,6 +216,13 @@ class Pairing(Base):
         self.assertEqual((self.dir / "cfg/token").read_text(), "local")
         self.assertIn("filesystem:read", issue.call_args[0][0])
         exchange.assert_not_called()
+        self.assertIn("main", json.loads((self.dir / "cfg/config.json").read_text())["local_tokens"], "so the companion app knows to renew it")
+
+    def test_a_link_from_another_machine_is_not_marked_for_renewal(self):
+        (self.dir / "cfg").mkdir()
+        (self.dir / "cfg/config.json").write_text(json.dumps({"local_tokens": {"main": 5}}))
+        self.connect(link="http://h:3773/pair#token=C", pictures=False)
+        self.assertEqual(json.loads((self.dir / "cfg/config.json").read_text())["local_tokens"], {})
 
     @unittest.skipIf(os.name == "nt", "Windows has no such permission bits")
     def test_the_token_is_only_yours(self):
@@ -287,6 +294,150 @@ class TokenSafety(Base):
         with mock.patch.object(t3remote, "T3Remote", return_value=fake), mock.patch.object(pairing, "exchange_pair_code", return_value="new"):
             pairing.connect_to_t3(None, "http://127.0.0.1:1/pair#token=C", False)
         self.assertIs(json.loads((self.dir / "cfg/config.json").read_text())["pictures"], False)
+
+
+class LocalTokenRenewal(Base):
+    """A token from this machine's T3 lasts 30 days, and the companion app swaps it a week early."""
+    DAY = 86400
+
+    def setUp(self):
+        super().setUp()
+        self.cfg = self.dir / "cfg"
+        self.cfg.mkdir()
+        self.issued, self.shell_error = [], None
+        pairing.RENEWED_AT.clear()
+        (self.cfg / "token").write_text("old")
+
+        def issue(scopes, *, quiet=False):
+            self.issued.append((scopes, quiet))
+            return "fresh"
+
+        def remote(url, token):
+            made = mock.Mock()
+            made.shell.side_effect = self.shell_error
+            made.shell.return_value = {"threads": []}
+            return made
+
+        for patch in (mock.patch.object(settings, "CONFIG_DIR", self.cfg), mock.patch.object(pairing, "issue_local_token", side_effect=issue),
+                      mock.patch.object(t3remote, "T3Remote", side_effect=remote)):
+            patch.start()
+            self.addCleanup(patch.stop)
+
+    def config(self, **values):
+        (self.cfg / "config.json").write_text(json.dumps(dict({"url": settings.DEFAULT_URL, "pictures": False}, **values)))
+
+    def saved(self):
+        return json.loads((self.cfg / "config.json").read_text())
+
+    def test_a_young_token_is_left_alone(self):
+        self.config(local_tokens={"main": 1000})
+        self.assertEqual(pairing.renew_local_tokens(now=1000 + 22 * self.DAY), [])
+        self.assertEqual(self.issued, [])
+        self.assertEqual((self.cfg / "token").read_text(), "old")
+
+    def test_a_week_before_it_runs_out_it_is_swapped_for_a_fresh_one(self):
+        self.config(local_tokens={"main": 1000}, pictures=True)
+        self.assertEqual(pairing.renew_local_tokens(now=1000 + 23 * self.DAY), ["main"])
+        self.assertEqual((self.cfg / "token").read_text(), "fresh")
+        self.assertEqual(self.issued, [(settings.BASE_SCOPES + [settings.PICTURE_SCOPE], True)], "the same access as before, asked for without a word on screen")
+        self.assertGreater(self.saved()["local_tokens"]["main"], 1000, "so the next renewal counts from now")
+        self.assertEqual(self.saved()["url"], settings.DEFAULT_URL)
+
+    def test_a_token_from_a_link_or_made_by_hand_is_never_renewed(self):
+        self.config()
+        self.assertEqual(pairing.renew_local_tokens(now=10 ** 10), [])
+        self.config(url="https://mac.example", local_tokens={"main": 1000})
+        self.assertEqual(pairing.renew_local_tokens(now=10 ** 10), [], "a mark left over from when T3 was on this machine")
+        self.assertEqual(self.issued, [])
+
+    def test_when_t3_says_no_the_old_token_stays(self):
+        self.config(local_tokens={"main": 1000})
+        with mock.patch.object(pairing, "issue_local_token", return_value=None):
+            self.assertEqual(pairing.renew_local_tokens(now=10 ** 10), [])
+        self.assertEqual((self.cfg / "token").read_text(), "old")
+        self.assertEqual(self.saved()["local_tokens"]["main"], 1000, "so it tries again next time")
+
+    def test_a_fresh_token_that_does_not_work_never_replaces_one_that_does(self):
+        self.config(local_tokens={"main": 1000})
+        self.shell_error = OSError("refused")
+        self.assertEqual(pairing.renew_local_tokens(now=10 ** 10), [])
+        self.assertEqual((self.cfg / "token").read_text(), "old")
+
+    def test_this_machines_extra_t3_is_renewed_too(self):
+        (self.cfg / "token-local").write_text("old-local")
+        self.config(url="https://mac.example", also=[{"name": "local", "url": settings.DEFAULT_URL}], local_tokens={"local": 1000})
+        self.assertEqual(pairing.renew_local_tokens(now=10 ** 10), ["local"])
+        self.assertEqual((self.cfg / "token-local").read_text(), "fresh")
+        self.assertEqual((self.cfg / "token").read_text(), "old", "the main one came from a link")
+
+    def test_a_config_edited_by_hand_cannot_point_renewal_somewhere_else(self):
+        self.config(url="https://mac.example", local_tokens={"../token": 1000, "main": True, "local": "soon"})
+        self.assertEqual(pairing.renew_local_tokens(now=10 ** 10), [])
+        self.assertEqual(self.issued, [])
+
+    def test_an_extra_t3_cannot_borrow_the_main_ones_name(self):
+        from promptpeon import servers
+        (self.cfg / "token-main").write_text("x")
+        with self.assertRaises(ValueError):
+            servers.from_config({"url": "https://remote.example", "also": [{"name": "main", "url": settings.DEFAULT_URL}]})
+        # And renewal doesn't act on such a config either: "main" only ever means the main T3.
+        self.config(url="https://remote.example", also=[{"name": "main", "url": settings.DEFAULT_URL}], local_tokens={"main": 1})
+        self.assertEqual(pairing.renew_local_tokens(now=10 ** 10), [])
+        self.assertEqual((self.cfg / "token").read_text(), "old")
+
+    def test_a_renewed_token_only_ever_goes_to_this_machines_t3(self):
+        from promptpeon import servers
+        (self.cfg / "token").write_text("fresh-local")
+        elsewhere = mock.Mock(token="remote-token", url="https://remote.example")
+        servers.use_renewed_tokens(elsewhere, ["main"])
+        self.assertEqual(elsewhere.token, "remote-token", "a connection that is still to another machine must not get this machine's token")
+
+    def test_settings_that_cannot_be_saved_do_not_mint_a_token_every_hour(self):
+        self.config(local_tokens={"main": 1000})
+        real_write = pairing.safefiles.write_atomic
+
+        def write(path, text, *args, **kwargs):
+            if path.name == "config.json":
+                raise PermissionError("config rename denied")
+            return real_write(path, text, *args, **kwargs)
+
+        now = 1000 + 25 * self.DAY
+        with mock.patch.object(pairing.safefiles, "write_atomic", side_effect=write):
+            self.assertEqual(pairing.renew_local_tokens(now=now), ["main"], "the token is saved, so the open connection must get it")
+            self.assertEqual(pairing.renew_local_tokens(now=now + 3600), [])
+            self.assertEqual(pairing.renew_local_tokens(now=now + 7200), [])
+        self.assertEqual(len(self.issued), 1, "one token, not one an hour")
+        self.assertEqual((self.cfg / "token").read_text(), "fresh")
+
+    def test_the_connection_in_use_gets_the_renewed_token(self):
+        from promptpeon import servers
+        (self.cfg / "token-local").write_text("fresh-local")
+        (self.cfg / "token").write_text("fresh-main")
+        main, local = mock.Mock(token="a", url=settings.DEFAULT_URL), mock.Mock(token="b", url=settings.DEFAULT_URL)
+        servers.use_renewed_tokens(main, ["main"])
+        self.assertEqual(main.token, "fresh-main")
+        both = servers.ServerSet([("main", mock.Mock(token="a", url="https://mac.example")), ("local", local)])
+        servers.use_renewed_tokens(both, ["local"])
+        self.assertEqual((both.servers[0][1].token, local.token), ("a", "fresh-local"))
+
+
+class LocalTokenLifetime(unittest.TestCase):
+    def test_it_asks_t3_for_thirty_days_not_a_year(self):
+        ran = []
+
+        def run(command, **kwargs):
+            ran.append(command)
+            return mock.Mock(returncode=0, stdout="token\n")
+
+        with mock.patch.object(pairing, "t3_program", return_value="/bin/t3"), mock.patch.object(pairing, "t3_answers", return_value=True), \
+                mock.patch.object(pairing.subprocess, "run", side_effect=run), contextlib.redirect_stdout(io.StringIO()) as out:
+            self.assertEqual(pairing.issue_local_token(["a:b"]), "token")
+        self.assertEqual(ran[0][ran[0].index("--ttl") + 1], "30d")
+        self.assertIn("30 days", out.getvalue())
+        with mock.patch.object(pairing, "t3_program", return_value="/bin/t3"), mock.patch.object(pairing, "t3_answers", return_value=True), \
+                mock.patch.object(pairing.subprocess, "run", side_effect=run), contextlib.redirect_stdout(io.StringIO()) as out:
+            pairing.issue_local_token(["a:b"], quiet=True)
+        self.assertEqual(out.getvalue(), "", "a renewal in the background says nothing")
 
 
 class PairingScopes(unittest.TestCase):

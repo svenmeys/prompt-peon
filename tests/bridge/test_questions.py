@@ -19,7 +19,7 @@ def ask(**extra):
     return item
 
 
-MARK = timeline.request_mark("req-1")
+MARK = timeline.question_mark(ask())
 
 
 class AskingRemote(CommandRemote):
@@ -44,8 +44,8 @@ class WhatTheGameIsTold(unittest.TestCase):
         rows = timeline.build_timeline([ask()])
         self.assertEqual(rows[0][0:3], ["q", "Which color?\n- Red\n- Blue\nWhich extras?\n- Wheels\n- Bell\n- Basket", "r"])
         choices = rows[0][4]
-        self.assertEqual(choices["r"], timeline.request_mark("req-1"))
-        self.assertEqual(len(choices["r"]), 8, "T3's own ids run to hundreds of characters")
+        self.assertEqual(choices["r"], timeline.question_mark(ask()))
+        self.assertEqual(len(choices["r"]), 32, "a fingerprint of the question and its answers, not only of its id")
         self.assertEqual([entry["t"] for entry in choices["q"]], ["Which color?", "Which extras?"])
         self.assertEqual(choices["q"][0]["o"], [["Red", "Warm"], ["Blue", "Cool"]])
         self.assertEqual((choices["q"][0]["m"], choices["q"][0]["c"]), (False, True), "a typed answer is allowed unless T3 says no")
@@ -74,7 +74,7 @@ class Answering(Base):
         return bridgestate.Bridge(self.wow, remote, state_dir=self.dir / "state", in_place=False, config_path=self.dir / "config.json"), remote
 
     def answer(self, words, item=None):
-        words = words.replace("req-1", MARK).replace("req-old", timeline.request_mark("req-old"))
+        words = words.replace("req-1", timeline.question_mark(item) if item else MARK).replace("req-old", timeline.question_mark(ask(requestId="req-old")))
         # The state folder outlives one bridge, so every answer gets a number of its own.
         self.seq = getattr(self, "seq", 0) + 1
         bridge, remote = self.make(item)
@@ -116,6 +116,35 @@ class Answering(Base):
             result, answered = self.answer(words)
             self.assertIn(expected, result, words)
             self.assertEqual(answered, [], words)
+
+    def test_answers_swapped_round_after_you_read_them_are_refused(self):
+        # The same request, with its two answers in the other order.
+        def staging_first(first, second):
+            return ask(questions=[{"id": "one", "header": "Where", "question": "Deploy where?", "multiSelect": False,
+                                   "options": [{"label": first.title(), "value": first}, {"label": second.title(), "value": second}]}])
+        seen = timeline.question_mark(staging_first("staging", "production"))
+        self.seq = getattr(self, "seq", 0) + 1
+        bridge, remote = self.make(staging_first("production", "staging"))
+        refreshing.refresh(bridge)
+        delivery.deliver(bridge, [command(self.seq, THREAD, f"answer\n{seen}\no:1")])
+        self.assertIn("changed", bridge.state["results"][str(self.seq)])
+        self.assertEqual(remote.answered, [], "answer 1 was Staging when it was read")
+
+    def test_the_mark_covers_every_answer_and_what_it_stands_for(self):
+        base = ask()
+        changed = [ask(requestId="other"), ask(threadId="another-thread")]
+        for field, value in (("label", "Crimson"), ("description", "Hot"), ("value", "red-v")):
+            item = ask()
+            item["questions"][0]["options"][0][field] = value
+            changed.append(item)
+        reordered = ask()
+        reordered["questions"][0]["options"].reverse()
+        changed.append(reordered)
+        retitled = ask()
+        retitled["questions"][0]["question"] = "Which colour?"
+        changed.append(retitled)
+        for item in changed:
+            self.assertNotEqual(timeline.question_mark(item), timeline.question_mark(base))
 
     def test_an_answer_too_long_is_refused(self):
         result, answered = self.answer("req-1\nt:" + "x" * (settings.MAX_REPLY_BYTES + 1) + "\no:1")

@@ -41,12 +41,16 @@ def command_result(bridge, verb: str, thread_id: str, argument: str) -> str:
         return start_thread(bridge, f"{project}\n{prompt}", mode, catalog.model_selection(bridge, instance.strip(), model.strip(), effort.strip()))
     if verb == "hidden":
         return set_hidden(bridge, argument)
+    if verb == "ping":
+        # The connection check in the game's Options. It asks for nothing and changes nothing:
+        # getting this far proves the game can be heard, and the answer proves it can hear back.
+        return "sent"
     known = bridge.known_threads()
     if thread_id not in known:
         if verb == "unsettle":
             return "failed: T3 no longer lists this thread. Reopen it in T3, then try again."
         return "failed: that thread is not on this T3 server"
-    if verb in ("diff", "agents", "file", "older", "view", "pr", "prdiff", "answer") and bridge.hides(known[thread_id]):
+    if verb in ("diff", "agents", "file", "older", "view", "pr", "prdiff", "answer", "approve") and bridge.hides(known[thread_id]):
         return "failed: this thread is hidden. Show it first."
     if verb == "stop":
         bridge.remote.stop_thread(thread_id)
@@ -65,6 +69,8 @@ def command_result(bridge, verb: str, thread_id: str, argument: str) -> str:
         # Pictures stay out: they are only for threads that ride along in every refresh.
         bridge.keep_loaded(thread_id, vm=bridge.previews.prepare(thread_id, bridge.remote.detail(thread_id)["rows"], False))
         return "sent"
+    elif verb == "approve":
+        return approve_request(bridge, thread_id, argument)
     elif verb in ("steer", "editq", "setmodel", "answer") and gates.refused_full_access(bridge, known[thread_id]):
         return gates.refused_full_access(bridge, known[thread_id])
     elif verb == "answer":
@@ -124,8 +130,9 @@ def answer_question(bridge, thread_id: str, argument: str) -> str:
     """
     request_id, _, lines = argument.partition("\n")
     item = bridge.remote.open_question(thread_id)
-    if not item or not isinstance(item.get("requestId"), str) or timeline.request_mark(item["requestId"]) != request_id.strip():
-        return "failed: that question isn't open any more. It may have been answered in T3"
+    # The mark covers the question, its answers and their order, so answer 2 is the answer 2 you read.
+    if not item or not isinstance(item.get("requestId"), str) or timeline.question_mark(item) != request_id.strip():
+        return "failed: that question isn't open any more, or it changed. Read it again before you answer"
     if not timeline.question_choices(item):
         return "failed: answer this one in T3, it doesn't fit in the game"
     questions = item["questions"]
@@ -161,6 +168,31 @@ def answer_question(bridge, thread_id: str, argument: str) -> str:
         else:
             return "failed: answer every question first"
     bridge.remote.answer_question(thread_id, item["requestId"], answers)
+    bridge.seen.pop(thread_id, None)
+    return "sent"
+
+
+def approve_request(bridge, thread_id: str, argument: str) -> str:
+    """Yolo mode: Approve or Decline what an agent asks to do, from the game. Off unless you turned
+    it on outside the game, because then any addon you trust can approve too.
+
+    The argument is the request's mark from the snapshot, then "accept" or "decline". The request
+    is read fresh from T3 and has to be the one the game showed, whole."""
+    if bridge.config().get("yolo") is not True:
+        return f"failed: Yolo mode is off, so approve this one in T3. To approve from the game, run: {gates.cli_command('yolo on')}"
+    mark, _, decision = argument.partition("\n")
+    item = bridge.remote.open_approval(thread_id)
+    if not item:
+        return "failed: that request isn't open any more. It may have been answered in T3"
+    fresh = timeline.approval_mark(item)
+    if not fresh:
+        return "failed: approve this one in T3, the game couldn't show all of it"
+    # The mark covers the thread, the request, its kind, its words and its reason, so this is what you read.
+    if fresh != mark.strip():
+        return "failed: that request isn't open any more, or it changed. Read it again before you approve it"
+    if decision.strip() not in ("accept", "decline"):
+        return "failed: the game can only Approve or Decline"
+    bridge.remote.answer_approval(thread_id, item["requestId"], decision.strip())
     bridge.seen.pop(thread_id, None)
     return "sent"
 

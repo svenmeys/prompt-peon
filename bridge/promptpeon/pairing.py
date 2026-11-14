@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 import socket
@@ -13,7 +14,7 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-from . import prompts, safefiles, screen, settings, t3remote, threadstate, userconfig
+from . import console, prompts, safefiles, screen, settings, t3remote, threadstate, userconfig
 
 
 def open_threads(count: int) -> str:
@@ -121,21 +122,93 @@ def make_link() -> int:
     return 0
 
 
-def issue_local_token(scopes: list[str]) -> str | None:
+LOCAL_TOKEN_DAYS = 30  # The same as a link from another machine gets.
+RENEW_WITH_DAYS_LEFT = 7
+
+
+def issue_local_token(scopes: list[str], *, quiet: bool = False) -> str | None:
     """With T3 on this machine there is nothing to paste, as long as it is running."""
     program = t3_program()
     if not program or not t3_answers(settings.DEFAULT_URL):
         return None
-    screen.say("This access lasts a year. You can revoke it in T3 under Settings, Sharing & access.")
+    if not quiet:
+        screen.say(f"This access lasts {LOCAL_TOKEN_DAYS} days, and the companion app renews it by itself while T3 is on this machine. "
+                   "You can revoke it in T3 under Settings, Sharing & access.")
     label = f"Prompt Peon {time.strftime('%Y-%m-%d')}"  # So the list in T3 can tell one from another.
-    command = [program, "auth", "session", "issue", "--ttl", "365d", "--label", label, "--token-only"]
+    command = [program, "auth", "session", "issue", "--ttl", f"{LOCAL_TOKEN_DAYS}d", "--label", label, "--token-only"]
     for scope in scopes:
         command += ["--scope", scope]
     try:
-        done = subprocess.run(command, capture_output=True, text=True, timeout=60)
+        # The companion app has no window of its own on Windows, and this mustn't flash one up.
+        done = subprocess.run(command, capture_output=True, text=True, timeout=60,
+                              creationflags=subprocess.CREATE_NO_WINDOW if quiet and os.name == "nt" else 0)
     except (OSError, subprocess.SubprocessError):
         return None
     return done.stdout.strip() if done.returncode == 0 and done.stdout.strip() else None
+
+
+def note_local_token(config: dict, name: str, issued: bool) -> dict:
+    """Remember when this machine's T3 gave us a token, so the companion app knows when to renew it.
+    A token from a link or made by hand isn't ours to renew, so it has no entry."""
+    times = dict(config.get("local_tokens") or {})
+    if issued:
+        times[name] = int(time.time())
+    else:
+        times.pop(name, None)
+    return dict(config, local_tokens=times)
+
+
+MAIN_NAME = "main"  # The T3 the installer set up. No extra T3 can have this name.
+RENEWED_AT: dict[str, float] = {}  # What this run renewed, in case the settings file couldn't be saved.
+
+
+def renew_local_tokens(now: float | None = None) -> list[str]:
+    """Swap each token this machine's T3 gave us for a fresh one a week before it runs out.
+    Returns the names renewed: "main" for the main T3, or the name of an extra one.
+
+    Only the companion app calls this, from time to time. A token that can't be renewed is left
+    alone. It works until it runs out, and then the game says to run the installer again."""
+    now = time.time() if now is None else now
+    config = userconfig.read_config()
+    times = config.get("local_tokens") or {}
+    here = settings.DEFAULT_URL.rstrip("/")
+    extras = {entry.get("name") for entry in config.get("also") or [] if (entry.get("url") or "").rstrip("/") == here}
+    renewed = []
+    for name, issued_at in times.items():
+        # "main" only ever means the main T3, and only when that is the one on this machine.
+        ours = (config.get("url") or "").rstrip("/") == here if name == MAIN_NAME else name in extras
+        if not ours or not isinstance(issued_at, (int, float)) or isinstance(issued_at, bool):
+            continue
+        if now - max(issued_at, RENEWED_AT.get(name, 0)) < (LOCAL_TOKEN_DAYS - RENEW_WITH_DAYS_LEFT) * 86400:
+            continue
+        token = issue_local_token(settings.BASE_SCOPES + ([settings.PICTURE_SCOPE] if config.get("pictures") is True else []), quiet=True)
+        if not token:
+            console.log(f"couldn't renew the T3 token for {name}: T3 isn't running here, or said no")
+            continue
+        try:
+            # Tried before saving, so a bad one can't replace one that works.
+            t3remote.T3Remote(settings.DEFAULT_URL, token).shell()
+        except (urllib.error.HTTPError, OSError, ValueError) as error:
+            console.log(f"the renewed T3 token for {name} didn't work, keeping the old one: {error}")
+            continue
+        if name == MAIN_NAME:
+            userconfig.save_token(token)
+        else:
+            userconfig.save_extra_token(name, token)
+        # From here the new token is the one on disk, whatever happens to the note about it below.
+        RENEWED_AT[name] = now
+        renewed.append(name)
+    if renewed:
+        config = userconfig.read_config()
+        for name in renewed:
+            config = note_local_token(config, name, True)
+        try:
+            safefiles.write_atomic(settings.CONFIG_DIR / "config.json", json.dumps(config, indent=2))
+        except OSError as error:
+            # The token is saved and in use. Without the note we'd ask for another every hour, so
+            # this run remembers by itself, and the next start asks once.
+            console.log(f"couldn't save when the T3 token was renewed: {error}")
+    return renewed
 
 
 def t3_answers(url: str) -> bool:
@@ -223,6 +296,7 @@ def connect_to_t3(url: str | None, link: str | None, pictures: bool | None, allo
     if t3_here and not link:
         allow_files = prompts.wants_pictures(pictures)
         token = issue_local_token(settings.BASE_SCOPES + ([settings.PICTURE_SCOPE] if allow_files else []))
+    issued_here = bool(token)
     if token:
         screen.say("Found T3 on this machine.")
         target = settings.DEFAULT_URL
@@ -256,7 +330,8 @@ def connect_to_t3(url: str | None, link: str | None, pictures: bool | None, allo
         sys.exit(f"Can't reach T3 at {target}, so nothing changed: {error}")
     userconfig.save_token(token)
     settings.CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    safefiles.write_atomic(settings.CONFIG_DIR / "config.json", json.dumps(dict(userconfig.read_config(), url=target, pictures=allow_files), indent=2))
+    config = note_local_token(dict(userconfig.read_config(), url=target, pictures=allow_files), MAIN_NAME, issued_here)
+    safefiles.write_atomic(settings.CONFIG_DIR / "config.json", json.dumps(config, indent=2))
     screen.ok(f"Connected to T3 at {target}. {open_threads(count)}.")
     return target
 
@@ -272,7 +347,9 @@ def offer_this_machine(url: str, wanted: bool | None) -> None:
     had_it = len(others) != len(config.get("also") or [])
 
     def keep(also: list) -> None:
-        safefiles.write_atomic(settings.CONFIG_DIR / "config.json", json.dumps(dict(userconfig.read_config(), also=also), indent=2))
+        showing = any(entry.get("name") == LOCAL_NAME for entry in also)
+        config = note_local_token(dict(userconfig.read_config(), also=also), LOCAL_NAME, showing)
+        safefiles.write_atomic(settings.CONFIG_DIR / "config.json", json.dumps(config, indent=2))
 
     if url.rstrip("/") == settings.DEFAULT_URL.rstrip("/") or wanted is False:
         # This machine is the main one now, or you said no, so it isn't an extra any more.

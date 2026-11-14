@@ -1,5 +1,11 @@
 <Bindings>
-  <Binding name="PROMPTPEON_TOGGLE" header="PROMPTPEON">
+  <Binding name="PROMPTPEON_TOGGLE" header="PROMPTPEON" category="BINDING_HEADER_PROMPTPEON">
     if PromptPeon_Toggle then PromptPeon_Toggle() end
+  </Binding>
+  <Binding name="PROMPTPEON_NEXT_WAITING" category="BINDING_HEADER_PROMPTPEON">
+    if PromptPeon_NextWaiting then PromptPeon_NextWaiting() end
+  </Binding>
+  <Binding name="PROMPTPEON_REPLY" category="BINDING_HEADER_PROMPTPEON">
+    if PromptPeon_Reply then PromptPeon_Reply() end
   </Binding>
 </Bindings>

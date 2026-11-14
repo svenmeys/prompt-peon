@@ -18,15 +18,18 @@ events:SetScript("OnEvent", function(_, event, name)
     db.pending = db.pending or {}
     db.drafts = db.drafts or {}
     db.results = db.results or {}
-    db.collapsed = db.collapsed or {}
     db.opacity = db.opacity or 1
     db.fontSize = db.fontSize or 11
     db.hiddenThreads = db.hiddenThreads or {}
     db.hiddenProjects = db.hiddenProjects or {}
     db.tracked = db.tracked or {}
     db.corpseRuns = db.corpseRuns or {}
-    if db.partyOn == nil then db.partyOn = true end
+    -- Once, for an install from before the tracker was an inbox: threads used to pin themselves when
+    -- they started working, and the party frames were on unless you turned them off.
+    if not db.inbox then db.inbox, db.tracked, db.partyOn = 1, {}, false end
     db.expanded = db.expanded or {}
+    -- Once: a build before 0.38.0 was released kept some expanded tables by their header's words.
+    if db.wideTablesBy ~= "mark" then db.wideTables, db.wideTablesBy = {}, "mark" end
     db.faces = db.faces or {}
     if db.faceSet ~= "peons" then db.faces, db.faceSet = {}, "peons" end
     db.levels = db.levels or {}
@@ -43,6 +46,7 @@ events:SetScript("OnEvent", function(_, event, name)
     if ns:CanSendSilently() then ns:WriteFrame(nil) end -- Clear anything a crash left set.
     if ns.UI then ns.UI:Build() end
     C_Timer.NewTicker(5, function() ns:Tick() end)
+    C_Timer.NewTicker(1, function() ns:Listen() end)
     C_Timer.After(1, function() ns:StartNextSend() end)
     -- A few seconds in, once the bridge has had a chance to start. Never forces a reload.
     C_Timer.After(5, function()
@@ -51,9 +55,21 @@ events:SetScript("OnEvent", function(_, event, name)
   end
 end)
 
+--- The key binding, the minimap button and the game's addon list button all open or close the log.
 function PromptPeon_Toggle()
   if ns.UI then ns.UI:Toggle() end
 end
 
+function PromptPeon_NextWaiting()
+  if ns.UI then ns.UI:NextWaiting() end
+end
+
+function PromptPeon_Reply()
+  if ns.UI then ns.UI:StartReply() end
+end
+
+-- The game titles the section in Key Bindings with the global each binding names as its category.
 BINDING_HEADER_PROMPTPEON = "Prompt Peon"
 BINDING_NAME_PROMPTPEON_TOGGLE = "Open or close the log"
+BINDING_NAME_PROMPTPEON_NEXT_WAITING = "Open the next thread waiting on you"
+BINDING_NAME_PROMPTPEON_REPLY = "Type a reply to the open thread"

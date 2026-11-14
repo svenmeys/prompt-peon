@@ -61,7 +61,7 @@ The addon tests use a stubbed client. They prove logic, not drawing. `check_api.
 - Binary or minified files.
 - Telemetry, more kinds of update check, automatic updates or any new server.
 - Features without that yes, rewrites, and tidying nobody asked for.
-- Approving an agent's actions from the game. Approvals stay in T3.
+- Any new way to approve an agent's actions from the game. Yolo mode is the one there is: off by default, turned on outside the game, Approve and Decline only. Nothing may widen it, turn it on from the game, or add "always allow".
 - Anything that plays the game for you, or asks for donations in the game. Blizzard's addon rules forbid the second, and we won't do the first.
 - Changes to `.github/`, unless we asked. That includes workflows, which are locked down on purpose.
 - Code you can't explain, whoever or whatever wrote it. Using AI is fine. Not having read the result isn't.

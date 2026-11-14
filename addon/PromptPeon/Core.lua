@@ -27,7 +27,6 @@ ns.REFRESH_CLOSED = 90 -- Log closed, nothing happening.
 ns.QUIET_RUSH_SLOTS = 12 -- Updates to spend at 5 seconds apart, waiting for the first real data after login.
 ns.BRIDGE_QUIET_AFTER = 45 -- A snapshot this old when loaded means the bridge has stopped.
 ns.MAX_REPLY_BYTES = 4000
-ns.FIRST_TRACKED = 5
 ns.STARTING_SHOWS_FOR = 30 -- Seconds. Long enough for T3 to answer, and it goes if T3 never does.
 ns.starting = {} -- New threads you've just started, until T3's own row arrives.
 ns.sentShowing = {} -- Messages the companion app has confirmed, until T3's own copy arrives.

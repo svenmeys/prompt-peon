@@ -241,7 +241,8 @@ function UI:RenderParty()
       if thread.s == "running" or thread.s == "needs" then addMember(thread) end
     end
     for _, thread in ipairs(threads) do
-      if thread.s ~= "running" and thread.s ~= "needs" and ns:IsTracked(thread) then addMember(thread) end
+      -- One that finished stays until you've read it, and one you pinned stays whatever it's doing.
+      if thread.s ~= "running" and thread.s ~= "needs" and (ns:WantsYou(thread) or ns:IsTracked(thread)) then addMember(thread) end
     end
   end
   for extra = index + 1, #self.partyRows do self.partyRows[extra]:Hide() end

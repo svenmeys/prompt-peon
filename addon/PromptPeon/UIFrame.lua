@@ -4,10 +4,46 @@ local _, ns = ...
 local UI = ns.UI
 local PAD, MIN_WIDTH_NO_LIST = UI.PAD, UI.MIN_WIDTH_NO_LIST
 
-local MIN_HEIGHT = 240
+-- Six side tabs, the three pages and the open thread's three, reach 334 down with their art:
+-- 36 to the first, 49 between each, 8 between the groups and 45 for the last one's art.
+local MIN_HEIGHT = 336
+UI.MIN_HEIGHT = MIN_HEIGHT
 local IDLE_ALPHA = 0.82 -- The whole window, when the mouse is elsewhere and you are not typing.
 local SIDE_TAB = 32 -- The spellbook's tab size.
 local SIDE_REACH = 40 -- How far the tab art sticks out past the right edge: 39 pixels of SpellBook-SkillLineTab, 3 tucked under.
+
+--- A tab hanging off the window's right edge, the way the spellbook's skill line tabs do
+--- (SpellBookSkillLineTabTemplate in SpellBookFrame.xml). Built by hand from the same art, because
+--- that template, and the newer LargeSideTabButtonTemplate, aren't on every client this loads on.
+function UI:SideTab(icon, onClick, tip)
+  local tab = CreateFrame("CheckButton", nil, self.frame)
+  tab:SetSize(SIDE_TAB, SIDE_TAB)
+  local socket = tab:CreateTexture(nil, "BACKGROUND")
+  socket:SetTexture("Interface\\SpellBook\\SpellBook-SkillLineTab")
+  socket:SetSize(64, 64)
+  socket:SetPoint("TOPLEFT", -3, 11)
+  tab.icon = tab:CreateTexture(nil, "ARTWORK")
+  tab.icon:SetAllPoints()
+  local path = icon:find("\\", 1, true) and icon or ("Interface\\Icons\\" .. icon)
+  tab.icon:SetTexture(path)
+  if path:find("\\Icons\\", 1, true) then tab.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92) end
+  tab:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
+  -- SetCheckedTexture takes no blend mode, and without one this art is a solid square over the icon.
+  tab:SetCheckedTexture("Interface\\Buttons\\CheckButtonHilight")
+  tab:GetCheckedTexture():SetBlendMode("ADD")
+  tab:SetScript("OnClick", function()
+    onClick()
+    UI:RenderSideTabs() -- A click flips the pressed look by itself. Put it back to what's really open.
+  end)
+  tab:SetScript("OnEnter", function(self)
+    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    tip(self)
+    GameTooltip:Show()
+  end)
+  tab:SetScript("OnLeave", function() GameTooltip:Hide() end)
+  self.sideTabs[#self.sideTabs + 1] = tab
+  return tab
+end
 
 --- Runs once, at login. Everything inside the window hangs off what's made here.
 function UI:Build()
@@ -16,7 +52,8 @@ function UI:Build()
 
   local frame = CreateFrame("Frame", "PromptPeonFrame", UIParent, "BasicFrameTemplateWithInset")
   -- Never bigger than the screen, whatever got saved.
-  frame:SetSize(math.min(ns.db.width or 820, UIParent:GetWidth()), math.min(ns.db.height or 520, UIParent:GetHeight()))
+  -- And never shorter than its tabs, which a window saved by an older version can be.
+  frame:SetSize(math.min(ns.db.width or 820, UIParent:GetWidth()), math.max(MIN_HEIGHT, math.min(ns.db.height or 520, UIParent:GetHeight())))
   local spot = ns.db.position
   if spot then
     frame:SetPoint(spot[1], UIParent, spot[2], spot[3], spot[4])
@@ -43,11 +80,12 @@ function UI:Build()
   end)
   frame:SetScript("OnHide", function()
     if UI.input then UI.input.EditBox:ClearFocus() end
+    if UI.filterBox then UI.filterBox:ClearFocus() end
     if ns.Game then ns.Game:BeginAway("closed") end
   end)
   -- Fade a little when you are playing, not reading. Text stays readable.
   frame:SetScript("OnUpdate", function(self)
-    local active = self:IsMouseOver(0, 0, 0, SIDE_REACH) or UI.input.EditBox:HasFocus()
+    local active = self:IsMouseOver(0, 0, 0, SIDE_REACH) or UI.input.EditBox:HasFocus() or UI.filterBox:HasFocus()
     local want, have = active and 1 or IDLE_ALPHA, self:GetAlpha()
     if math.abs(want - have) > 0.01 then self:SetAlpha(have + (want - have) * 0.2) end
     UI:TickActivity()
@@ -55,41 +93,12 @@ function UI:Build()
   frame:Hide()
   table.insert(UISpecialFrames, "PromptPeonFrame") -- Escape closes it, like the real quest log.
   self.frame = frame
+  self.sideTabs = {}
 
   frame.TitleText:SetText("Prompt Peon")
 
-  -- The pages hang off the right edge as tabs, the way the spellbook's skill line tabs do
-  -- (SpellBookSkillLineTabTemplate in SpellBookFrame.xml). Built by hand from the same art, because
-  -- that template, and the newer LargeSideTabButtonTemplate, aren't on every client this loads on.
-  local function sideTab(icon, onClick, tip)
-    local tab = CreateFrame("CheckButton", nil, frame)
-    tab:SetSize(SIDE_TAB, SIDE_TAB)
-    local socket = tab:CreateTexture(nil, "BACKGROUND")
-    socket:SetTexture("Interface\\SpellBook\\SpellBook-SkillLineTab")
-    socket:SetSize(64, 64)
-    socket:SetPoint("TOPLEFT", -3, 11)
-    tab.icon = tab:CreateTexture(nil, "ARTWORK")
-    tab.icon:SetAllPoints()
-    local path = icon:find("\\", 1, true) and icon or ("Interface\\Icons\\" .. icon)
-    tab.icon:SetTexture(path)
-    if path:find("\\Icons\\", 1, true) then tab.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92) end
-    tab:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
-    tab:SetCheckedTexture("Interface\\Buttons\\CheckButtonHilight", "ADD")
-    tab:SetScript("OnClick", function()
-      onClick()
-      UI:RenderSideTabs() -- A click flips the pressed look by itself. Put it back to what's really open.
-    end)
-    tab:SetScript("OnEnter", function(self)
-      GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-      tip()
-      GameTooltip:Show()
-    end)
-    tab:SetScript("OnLeave", function() GameTooltip:Hide() end)
-    self.sideTabs[#self.sideTabs + 1] = tab
-    return tab
-  end
-  self.sideTabs = {}
-  self.reportIcon = sideTab("INV_Letter_15", function()
+  -- The pages hang off the right edge as tabs. The open thread's own tabs join them in BuildDetail.
+  self.reportIcon = self:SideTab("INV_Letter_15", function()
     if UI.showReport then
       UI.showReport = nil
       UI:Render()
@@ -101,7 +110,7 @@ function UI:Build()
     local report = ns.Game and ns.Game:CurrentReport()
     GameTooltip:AddLine(report and ns.Game.ReportHeadline(report) or (ns.Game and ns.Game.NO_REPORT) or "", 1, 1, 1, true)
   end)
-  self.achievementsIcon = sideTab("Spell_Holy_SealOfWisdom", function()
+  self.achievementsIcon = self:SideTab("Spell_Holy_SealOfWisdom", function()
     if UI.showAchievements then
       UI.showAchievements = nil
       UI:Render()
@@ -112,37 +121,9 @@ function UI:Build()
     GameTooltip:AddLine("Achievements")
     if ns.Game then GameTooltip:AddLine(ns.Game.EarnedWords(), 1, 1, 1) end
   end)
-  self.options = sideTab("Interface\\WorldMap\\GEAR_64GREY", function() UI:ToggleOptions() end, function()
+  self.options = self:SideTab("Interface\\WorldMap\\GEAR_64GREY", function() UI:ToggleOptions() end, function()
     GameTooltip:AddLine("Options")
   end)
-  -- The game's own loot dice stay by the close button: they jump to a thread, they aren't a page.
-  -- Need comes before greed: unblock someone before admiring finished work.
-  local function rollIcon(kind, art, anchor, title, detail)
-    local button = CreateFrame("Button", nil, frame)
-    button:SetSize(16, 16)
-    if anchor then
-      button:SetPoint("RIGHT", anchor, "LEFT", -4, 0)
-    else
-      button:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -27, -4)
-    end
-    button.icon = button:CreateTexture(nil, "ARTWORK")
-    button.icon:SetAllPoints()
-    button.icon:SetTexture(art)
-    button:SetHighlightTexture(art, "ADD")
-    button:SetScript("OnClick", function() UI:NextRoll(kind) end)
-    button:SetScript("OnEnter", function(self)
-      GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
-      GameTooltip:AddLine(title .. " (" .. #UI.Rolls(kind) .. ")")
-      GameTooltip:AddLine(detail, 1, 1, 1, true)
-      GameTooltip:Show()
-    end)
-    button:SetScript("OnLeave", function() GameTooltip:Hide() end)
-    button.count = button:CreateFontString(nil, "OVERLAY", "PromptPeonSmall")
-    button.count:SetPoint("BOTTOMRIGHT", 3, -2)
-    return button
-  end
-  self.greedIcon = rollIcon("greed", "Interface\\Buttons\\UI-GroupLoot-Coin-Up", nil, "Greed", "Finished work you haven't read. Click for the next one.")
-  self.needIcon = rollIcon("need", "Interface\\Buttons\\UI-GroupLoot-Dice-Up", self.greedIcon, "Need", "They're waiting on you. Click for the next one.")
   -- The tabs are part of the window: keep them on screen, and count them as "the mouse is on it".
   frame:SetClampRectInsets(0, SIDE_REACH, 0, 0)
   self:PlaceSideTabs()
@@ -231,6 +212,7 @@ function UI:Build()
   end)
 
   self:BuildParty()
+  self:BuildMinimapButton()
   local listButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
   listButton:SetSize(22, 18)
   listButton:SetPoint("TOPLEFT", frame, "TOPLEFT", 6, -3)
@@ -255,7 +237,7 @@ function UI:Build()
     elseif ns:ThreadById(ns.db.selected) then
       UI:StartNewThread()
     else
-      ns.Chat:ReportReload("Open a thread first, or right-click a project and pick New thread here.")
+      ns.Chat:ReportReload("Open a thread first, or right-click one and pick New thread in its project.")
     end
   end)
   newButton:SetScript("OnEnter", function(self)
@@ -289,6 +271,8 @@ function UI:OpenThread(id)
   self:SaveDraft()
   if self.newThread then self:StopNewThread() end
   self.showOptions, self.showAchievements, self.showReport = nil, nil, nil
+  -- Opening a thread always shows what it said. With no Back button, its name in the list is the way home.
+  self.views[id], self.prOpen[id], self.shownThread = nil, nil, nil
   ns.db.selected = id
   if self.frame:IsShown() then self:Render() else self.frame:Show() end
 end

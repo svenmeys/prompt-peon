@@ -35,7 +35,7 @@ flowchart TB
     Addon --> Out
     Out -- "SaveAddOns writes" --> Txt
     Addon -- "reload or logout writes" --> SV
-    Txt -- "read every second" --> App
+    Txt -- "watched for changes" --> App
     SV -- "read as a fallback" --> App
 ```
 
@@ -105,7 +105,7 @@ sequenceDiagram
     Addon->>Addon: split the reply into frames
     loop each frame
         Addon->>Txt: set 96 on/off flags, SaveAddOns
-        App->>Txt: read every second, check the frame
+        App->>Txt: see the change within 20 ms, check the frame
     end
     App->>T3: send the reply or run the command
     App->>Addon: result, in the next snapshot
@@ -114,7 +114,7 @@ sequenceDiagram
 
 *Each frame carries 10 bytes plus checks. A short reply arrives in under a second, and a send step costs about 1 ms in the game.*
 
-If that path stalls, the reply stays queued in SavedVariables as `PromptPeonOutbox`, and a UI reload delivers it. Each message has a sequence number, and the companion app only acts on a number once, so a retry can't send twice.
+If that path stalls, or the game hasn't restarted since the install so the send addons aren't listed yet, the reply stays queued in SavedVariables as `PromptPeonOutbox`. A UI reload delivers it, and only the Reload UI button starts one. Each message has a sequence number, and the companion app only acts on a number once, so a retry can't send twice.
 
 A command is a message that starts with byte `0x01`, which no keyboard can type into a reply. That's how a typed message can never become a command.
 
@@ -129,6 +129,8 @@ A command is a message that starts with byte `0x01`, which no keyboard can type 
 | `setmodel` | Pick model and effort for the next turn | Yes |
 | `steer`, `cancelq`, `editq` | Change a queued message | Yes |
 | `answer` | Answer the question an agent is waiting on: which answers you picked, counted from 1, or what you typed | Yes |
+| `approve` | Yolo mode only: Approve or Decline what an agent asks to do, by the request's mark | Yes |
+| `ping` | The connection check. Asks for nothing and changes nothing | No, it counts as fetching |
 | `diff`, `file`, `agents`, `older`, `view`, `pr` | Fetch something to read | No, they have their own limit of 60 a minute |
 | `hidden` | Tell the companion app what you hid | No |
 
@@ -157,10 +159,11 @@ T3's remote API isn't public. `tests/check_t3_contract.py` asks a real T3 whethe
 
 ## Decisions, and what we didn't do
 
-- **Warned reloads, not an unlimited channel.** Research found no proven way to read unlimited fresh data inside the game. A sound-file flag could make reloads rarer, but it isn't proven and adds load to the game.
+- **Warned reloads, not an unlimited channel.** Research found no proven way to read unlimited fresh data inside the game. The update bell below says when a refresh is worth it. It doesn't carry data, so the budget of refreshes stays.
+- **The update bell.** An addon can play a sound and ask whether it is really playing, and an empty file doesn't play. The companion app keeps nine silent sound files in the addon's `bells` folder: one that is always real, and eight of which exactly one is real, the one for the count in the newest snapshot (`sg`). Once a second the game plays the always-real one and the bell for the snapshot it has. If the first plays and the second doesn't, a newer snapshot is waiting and it refreshes at once. The companion app moves the bell on when a thread changes state, starts or stops waiting on you, appears or goes, when something you asked for arrives, and when T3 goes out of reach or comes back. It doesn't for the words an agent writes, for the order the threads come in, or for something you asked for expiring. The timer still runs as before. If the game's sound is off, nothing plays and the timer is all there is. Three rings with no news behind them stop the listening until the next reload, and the bell can ask for at most 20 refreshes in ten minutes, so neither a broken bell nor agents flapping between states can use the refreshes up. The companion app never opens a bell to write into it: each ring makes a new file and swaps it in, so a link put in a bell's place can't aim the write at another file. Measured on WoW Forever on 2026-11-13: a changed file was heard at the next listen. Not yet measured on Classic Era or retail. The idea is Ryan Hughes's, from t3code-wow.
 - **1,000 helpers.** More helpers mean fewer reloads. The addon list and login were checked by hand at 1,096 and feel normal. All helpers sit under one collapsible heading.
 - **Two T3s at once, at most what you set up.** T3 doesn't share threads between machines, so with your threads on one machine and T3 running on the game machine too, the installer offers to show both. `servers.ServerSet` makes them look like one: T3's ids are random, so no thread or project is on two servers, and each call goes to the server that listed it. Projects from the extra server carry its name, like `Shop (local)`. A server that stops answering keeps its last list, and the game says which one it is. With only one server nothing changes: it's a plain `T3Remote`.
-- **No approvals from the game.** Answering an agent's permission request stays in T3. A question is different: it asks what you want, which a reply could say too, so the game answers those. The game only says which answers you picked, counted from 1, or what you typed. The companion app reads the open question from T3 again and sends T3's own words, so the game can't answer a question that changed or pick an answer that isn't offered.
+- **Approvals from the game only in yolo mode.** Answering an agent's permission request stays in T3 unless you turn yolo mode on, which is done outside the game with `yolo on`. Then the game can Approve or Decline, and nothing else: no "always allow". What the game sends back is a fingerprint of the thread, T3's request id, the kind of request, the request and the agent's reason, each kept apart. The companion app reads the open request from T3 again and works the fingerprint out afresh, so a request that changed, or a different one, is refused. The game draws the request in the code font and the reason after it, grey, under its own heading, so nothing written inside a request can pass for a reason. A request the game can't show exactly as it is can't be approved from the game at all: one over 8,000 characters with its reason, one with a part the secret filter would hide, and one with anything but plain ASCII in it, since an invisible or right-to-left character can make text look like something it isn't. A question is different: it asks what you want, which a reply could say too, so the game answers those. The game only says which answers you picked, counted from 1, or what you typed, with a fingerprint of the question, its answers in order and what each stands for. The companion app reads the open question from T3 again and sends T3's own words, so the game can't answer a question that changed, pick an answer that isn't offered, or have answer 2 mean something else than it did when it was read.
 - **Addons share one Lua state.** Nothing inside the game can tell our code from another addon's, so every real check lives outside it, in the companion app. The addon's questions and limits protect you from mistakes, not from another addon. See [SECURITY.md](SECURITY.md).
 - **Small files, one package.** Every file does one job and says so at the top. Addon files stay flat in one folder, because the installer checks that folder against an exact list. A new addon file only loads after a full game restart, so the installer asks you to close the game.
 - **Standard library only.** No dependency to install, audit or keep updated, on either side of a double-click installer.
@@ -180,7 +183,7 @@ T3's remote API isn't public. `tests/check_t3_contract.py` asks a real T3 whethe
 | `CoreStartup.lua` | Saved settings, timers, the key binding |
 | `Chat.lua` | Chat lines, links and the command |
 | `UI.lua` | Only what the `UI*` files share |
-| `UITracker.lua`, `UIParty.lua` | The tracker and party frames |
+| `UITracker.lua`, `UIMinimap.lua`, `UIParty.lua` | The tracker, the minimap button and party frames |
 | `UIFrame.lua`, `UILayout.lua` | Builds the window, its size, fonts and opacity |
 | `UIList.lua` | The thread list |
 | `UIDetail.lua`, `UICanvas.lua`, `UIMessages.lua` | The right pane: its pieces, the drawing surface, and message rows |

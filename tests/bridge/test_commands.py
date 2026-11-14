@@ -59,6 +59,20 @@ class Commands(Base):
         self.assertEqual(remote.sent, [(THREAD, "stop")])
         self.assertEqual(remote.calls, [])
 
+    def test_the_connection_check_is_answered_and_touches_nothing(self):
+        bridge, remote = self.make()
+        delivery.deliver(bridge, [command(1, "settings", "ping")])
+        self.assertEqual(bridge.state["results"]["1"], "sent")
+        self.assertEqual(remote.calls, [])
+        self.assertEqual(remote.sent, [])
+
+    def test_the_connection_check_says_so_when_an_addon_you_have_not_trusted_is_in_the_way(self):
+        bridge, remote = self.make()
+        (self.wow / "Interface/AddOns/SomeoneElse").mkdir()
+        delivery.deliver(bridge, [command(1, "settings", "ping")])
+        self.assertIn("SomeoneElse", bridge.state["results"]["1"])
+        self.assertTrue(bridge.state["results"]["1"].startswith("failed"))
+
     def test_unknown_thread_and_verb_are_refused(self):
         bridge, remote = self.make()
         delivery.deliver(bridge, [command(1, "aaaaaaaa-1111", "stop"), command(2, THREAD, "format-the-disk")])

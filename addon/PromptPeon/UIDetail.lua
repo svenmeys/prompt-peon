@@ -3,7 +3,7 @@
 
 local _, ns = ...
 local UI = ns.UI
-local PAD, BACK_WIDTH, addFold, hideScrollBarWhenIdle = UI.PAD, UI.BACK_WIDTH, UI.AddFold, UI.HideScrollBarWhenIdle
+local PAD, addFold, hideScrollBarWhenIdle = UI.PAD, UI.AddFold, UI.HideScrollBarWhenIdle
 
 local LOAD_PATIENCE = 30
 
@@ -15,14 +15,6 @@ function UI:BuildDetail(frame)
   title:SetWordWrap(false)
   self.title = title
   self.titleLeft = UI.ListWidth() + PAD + 16
-
-  -- At the top, where it's there however far you've scrolled.
-  local back = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-  back:SetSize(BACK_WIDTH, 18)
-  back:SetText("Back")
-  back:SetScript("OnClick", function() UI:GoBack() end)
-  back:Hide()
-  self.back = back
 
   local meta = frame:CreateFontString(nil, "OVERLAY", "PromptPeonSmall")
   meta:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -4)
@@ -49,15 +41,22 @@ function UI:BuildDetail(frame)
     button:Hide()
     return button
   end
-  -- Two more ways to look at a thread, like T3's: what it changed and who it sent out.
-  local function viewButton(name, verb, icon)
-    local button = action(function() UI:ToggleView(name, verb) end)
-    button.icon:SetTexture("Interface\\Icons\\" .. icon)
-    return button
+  -- Three more ways to look at the open thread, like T3's: what it changed, its pull requests and who
+  -- it sent out. They're tabs in a second group under the pages, each with a count.
+  local function viewTab(name, verb, icon)
+    local tab = self:SideTab(icon, function() UI:ToggleView(name, verb) end, function(self)
+      GameTooltip:AddLine(self.label, 1, 0.82, 0)
+      GameTooltip:AddLine(self.detail, 1, 1, 1, true)
+    end)
+    tab.ofThread = true
+    tab.count = tab:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
+    tab.count:SetPoint("BOTTOMRIGHT", -2, 2)
+    tab:Hide()
+    return tab
   end
-  self.changes = viewButton("changes", "diff", "INV_Scroll_03")
-  self.pullRequests = viewButton("prs", nil, "INV_Misc_Map_01")
-  self.agents = viewButton("agents", "agents", "Ability_Warrior_BattleShout")
+  self.changes = viewTab("changes", "diff", "INV_Scroll_03")
+  self.pullRequests = viewTab("prs", nil, "INV_Misc_Map_01")
+  self.agents = viewTab("agents", "agents", "Ability_Warrior_BattleShout")
   self.primary = action(function() UI:PrimaryAction() end)
   self.secondary = action(function() UI:SecondaryAction() end)
   self.snoozeButton = action(function(button)
@@ -159,7 +158,13 @@ function UI:GroupHead(index)
   head.text:SetJustifyH("LEFT")
   head.text:SetWordWrap(false)
   head:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestLogTitleHighlight", "ADD")
+  -- These lines are reused from one redraw to the next. A press that began while the line stood for
+  -- one thing does nothing if it stands for another by the time the button comes up.
+  head:SetScript("OnMouseDown", function(self) self.pressedKey = self.key end)
   head:SetScript("OnClick", function(self)
+    local pressedKey = self.pressedKey
+    self.pressedKey = nil
+    if pressedKey ~= nil and pressedKey ~= self.key then return end
     local nowOpen = not self.open
     UI.groups[self.key] = nowOpen
     if self.onClick then self.onClick(nowOpen, self) end
@@ -213,8 +218,13 @@ end
 function UI:ToggleView(name, verb)
   local thread = ns:ThreadById(ns.db.selected)
   if not thread then return end
-  if name == "prs" then self.prOpen[thread.id] = nil end -- The icon always starts from the list.
-  if self.views[thread.id] == name then
+  -- A thread tab pressed from a page leaves the page and shows its view, even if that view was open
+  -- underneath. Pressed on its own view, it goes back to what the thread said.
+  local onPage = self.newThread or self.showOptions or self.showAchievements or self.showReport
+  if self.newThread then self:StopNewThread() end
+  self.showOptions, self.showAchievements, self.showReport = nil, nil, nil
+  if name == "prs" then self.prOpen[thread.id] = nil end -- The tab always starts from the list.
+  if self.views[thread.id] == name and not onPage then
     self.views[thread.id] = nil
   else
     self.views[thread.id] = name

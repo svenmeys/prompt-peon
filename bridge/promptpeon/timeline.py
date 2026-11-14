@@ -1,6 +1,7 @@
 """Turning what T3 holds inside one thread into the rows the game's log shows."""
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import zlib
@@ -106,13 +107,62 @@ def question_choices(item: dict) -> dict | None:
         })
     if not any(entry["o"] or entry["c"] for entry in shown):
         return None
-    return {"r": request_mark(request), "q": shown}
+    return {"r": question_mark(item), "q": shown}
 
 
-def request_mark(request_id: str) -> str:
-    """A short stand-in for T3's request id, which runs to hundreds of characters. The game sends
-    this back with its answer, and the companion app checks it against the question open now."""
-    return f"{zlib.crc32(request_id.encode('utf-8')):08x}"
+APPROVAL_KINDS = {"command": "run a command", "file-read": "read a file", "file-change": "change files"}
+
+
+def fingerprint(*fields) -> str:
+    """What the game sends back with an answer or a decision: a fingerprint of everything that
+    decided it, each field kept apart from the next. The companion app works it out again from T3
+    when the answer arrives. If anything changed, it isn't what was read, and it is refused."""
+    return hashlib.sha256(json.dumps(fields, ensure_ascii=True, separators=(",", ":")).encode("ascii")).hexdigest()[:32]
+
+
+def exactly_showable(text: str) -> bool:
+    """Whether the game shows this text exactly as it is: plain printable ASCII and line breaks,
+    with nothing the secret filter would hide. Anything else can look different from what it is,
+    such as an invisible character, text that runs right to left, or a letter the font lacks."""
+    return all(char == "\n" or " " <= char <= "~" for char in text) and gametext.message_text(text) == text
+
+
+def approval_parts(item: dict) -> dict | None:
+    """What the agent is asking to do, in the pieces the game shows: what kind of thing ("k"), the
+    request itself ("c"), and the agent's own reason if it gave one ("y"). The game draws the reason
+    apart from the request, so nothing inside a request can pass for a reason.
+
+    None when the game can't show every character as it is, and then the game can't approve it:
+    nobody should approve something they couldn't read."""
+    prompt, reason = item.get("prompt"), item.get("reason")
+    if not isinstance(prompt, str) or not prompt.strip():
+        return None
+    prompt, reason = prompt.strip(), reason.strip() if isinstance(reason, str) else ""
+    if len(prompt) + len(reason) > settings.MAX_APPROVAL_CHARS:
+        return None
+    if not exactly_showable(prompt) or not exactly_showable(reason):
+        return None
+    return {"k": APPROVAL_KINDS.get(item.get("requestKind"), "do something it needs your approval for"), "c": prompt, "y": reason}
+
+
+def approval_mark(item: dict) -> str | None:
+    """The fingerprint of an approval request: its thread, T3's request id, its kind, the request
+    and the reason. None when the game can't approve this one."""
+    parts, request = approval_parts(item), item.get("requestId")
+    if not parts or not isinstance(request, str) or not request:
+        return None
+    return fingerprint("approval", item.get("threadId") or "", request, item.get("requestKind") or "", parts["c"], parts["y"])
+
+
+def question_mark(item: dict) -> str:
+    """The fingerprint of an open question: its thread, T3's request id, and every question with its
+    answers in order, down to the value T3 would be sent. So an answer picked by its number can
+    only ever mean what it meant when it was read."""
+    questions = [[question.get("id"), question.get("question"), question.get("header"), question.get("multiSelect") is True,
+                  question.get("allowCustomAnswer") is not False,
+                  [[option.get("label"), option.get("description"), option.get("value")] for option in answer_options(question)]]
+                 for question in item.get("questions") or [] if isinstance(question, dict)]
+    return fingerprint("question", item.get("threadId") or "", item.get("requestId") or "", item.get("responseMode") or "", questions)
 
 
 def answer_options(question: dict) -> list[dict]:
@@ -155,6 +205,13 @@ def build_timeline(items: list[dict]) -> list[list]:
                 rows.append(["q", question, state, order, choices] if choices else ["q", question, state, order])
             elif question:
                 rows.append(["n", f"Asked: {first_line(question)}", state, order])
+        elif kind == "approval_request" and state == "r":
+            mark, parts = approval_mark(item), approval_parts(item)
+            if mark:
+                # The request is the row's words. Its kind and the agent's reason ride beside it, kept apart.
+                rows.append(["p", parts["c"], state, order, {"r": mark, "k": parts["k"], **({"y": parts["y"]} if parts["y"] else {})}])
+            else:
+                rows.append(["n", "Waiting for your approval. Answer it in T3.", state, order])
         elif kind == "checkpoint":
             files = item.get("files") or []
             if files:

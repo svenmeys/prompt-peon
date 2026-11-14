@@ -90,24 +90,8 @@ function ns:PeonSays(line)
   PlaySound(self:Workers()[line])
 end
 
---- A new install starts with quests on the tracker, instead of an empty one until an agent next starts.
---- The list comes most urgent first. An install already in use is left as you set it.
-function ns:TrackFirstQuests(snapshot)
-  if self.db.firstTracked or #snapshot.threads == 0 then return end
-  self.db.firstTracked = true
-  if next(self.db.tracked) then return end
-  local count = 0
-  for _, thread in ipairs(snapshot.threads) do
-    if count < self.FIRST_TRACKED and not self:IsHidden(thread) then
-      self.db.tracked[thread.id] = true
-      count = count + 1
-    end
-  end
-end
-
 --- What changed since the last snapshot. Voices, tracking and finish reports all start here.
 function ns:NoticeChanges(snapshot)
-  self:TrackFirstQuests(snapshot)
   self:SettleStarting(snapshot)
   self:SettleSent()
   local previous, current = self.lastStatus, {}
@@ -116,10 +100,6 @@ function ns:NoticeChanges(snapshot)
     current[thread.id] = thread.s
     queuedNow[thread.id] = thread.qc or 0
     local before = previous and previous[thread.id]
-    -- Like a quest: once it is on your list it stays there until you turn it in or take it off.
-    if (thread.s == "running" or thread.s == "needs") and self.db.tracked[thread.id] == nil and not self:IsHidden(thread) then
-      self.db.tracked[thread.id] = true
-    end
     if self.Game and not self:IsHidden(thread) then self.Game:NoticeLevel(thread) end
     if previous and not self:IsHidden(thread) then
       -- Fewer waiting and still working means it just took the next one off the queue.

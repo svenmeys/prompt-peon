@@ -5,7 +5,18 @@ import queue
 import threading
 import time
 
-from . import addonfiles, console, delivery, frames, processes, publishing, refreshing, settings, updater
+from . import addonfiles, console, delivery, frames, pairing, processes, publishing, refreshing, servers, settings, updater
+
+
+def keep_tokens_fresh(bridge) -> None:
+    """A token from this machine's T3 lasts 30 days. Renew it a week early, and never let that stop the loop."""
+    try:
+        renewed = pairing.renew_local_tokens()
+        if renewed:
+            servers.use_renewed_tokens(bridge.remote, renewed)
+            console.log(f"renewed the T3 token for {', '.join(renewed)}")
+    except Exception as error:
+        console.log(f"token renewal failed: {error}")
 
 
 def run(bridge, *, always: bool = False) -> None:
@@ -37,6 +48,7 @@ def run(bridge, *, always: bool = False) -> None:
     next_game_check = 0.0
     next_clear = 0.0
     next_version_check = time.monotonic() + settings.VERSION_CHECK_SECONDS
+    next_token_check = 0.0
     was_running = False
     running = False
     # --always is for testing by hand, and asks for T3 only.
@@ -67,6 +79,9 @@ def run(bridge, *, always: bool = False) -> None:
             for client in bridge.clients():
                 addonfiles.keep_addon_current(client)  # The launcher patches while the game is closed.
             next_version_check = now + settings.VERSION_CHECK_SECONDS
+        if now >= next_token_check:
+            next_token_check = now + settings.TOKEN_CHECK_SECONDS
+            keep_tokens_fresh(bridge)
         try:
             while not replies.empty():
                 delivery.deliver(bridge, [replies.get_nowait()])

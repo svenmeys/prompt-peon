@@ -4,14 +4,17 @@ local _, ns = ...
 local UI = ns.UI
 
 local function selectedThread(threads)
+  -- A hidden thread can be open while the Hidden group is, and while a search is listing it: either
+  -- way you clicked it where it was shown. Anywhere else, picking it falls back to the first one.
+  local showsHidden = ns.db.hiddenOpen or UI.filter ~= nil
   local fallback
   for _, thread in ipairs(threads) do
-    if thread.id == ns.db.selected and (ns.db.hiddenOpen or not ns:IsHidden(thread)) then return thread end
+    if thread.id == ns.db.selected and (showsHidden or not ns:IsHidden(thread)) then return thread end
     if not fallback and not ns:IsHidden(thread) then fallback = thread end
   end
   -- Opened from the Snoozed or Settled groups.
   local parked = ns:ThreadById(ns.db.selected)
-  if parked and parked.pk and (ns.db.hiddenOpen or not ns:IsHidden(parked)) then return parked end
+  if parked and parked.pk and (showsHidden or not ns:IsHidden(parked)) then return parked end
   return fallback
 end
 
@@ -20,6 +23,7 @@ function UI:Render()
   if not self.tracker then return end
   self:RenderTracker()
   self:RenderParty()
+  self:RenderMinimapButton()
   if not self:IsOpen() then return end
 
   local problem = ns:Problem()

@@ -1,8 +1,11 @@
--- Send: the reply queue, and pacing frames out through the send addons, with a reload as the fallback.
+-- Send: the reply queue, and pacing frames out through the send addons. A reload can carry what is
+-- waiting too, but only when the player presses Reload UI.
 
 local addonName, ns = ...
 
 local band, lshift = bit.band, bit.lshift
+
+ns.WAITING_FOR_RESTART = "Saved. Press Reload UI in the log to send it now. After you restart the game it sends by itself."
 
 --- True when the send addons exist. They are only listed if they were there when the
 --- game started, so right after an update this is false until the next restart.
@@ -23,7 +26,7 @@ end
 --- Put one frame on disk. Nil clears every bit.
 function ns:WriteFrame(frame)
   local me = self:CharacterKey()
-  if not me then return end -- The send times out and goes the slow way, through a reload.
+  if not me then return end -- The send times out, and the log offers Reload UI to carry it.
   for index = 1, self.OUT_COUNT do
     local byte = frame and frame:byte(math.floor((index - 1) / 8) + 1) or 0
     local set = band(byte, lshift(1, (index - 1) % 8)) ~= 0
@@ -177,12 +180,14 @@ function ns:StartNextSend()
   self.sender:Show()
 end
 
---- Send what is queued. Only falls back to a reload if the send addons are missing.
+--- Send what is queued. Without the send addons it waits, saved, until the player reloads or
+--- restarts the game. Nothing here ever reloads by itself.
 function ns:Deliver()
   if self:CanSendSilently() then
     self:StartNextSend()
-  else
-    self:Flush()
+  elseif not self.saidWaiting and self.Chat then
+    self.saidWaiting = true
+    self.Chat:ReportReload(self.WAITING_FOR_RESTART)
   end
 end
 
@@ -230,6 +235,17 @@ function ns:CheckDelivered(entry, attempt)
     elseif (entry.tries or 0) < self.MAX_TRIES then
       entry.waiting = nil
       self:StartNextSend()
+    elseif entry.command == "ping" then
+      -- A connection check that got no answer is the answer. It leaves, so it can't hold up a real reply.
+      for index, candidate in ipairs(self.db.pending) do
+        if candidate == entry then
+          table.remove(self.db.pending, index)
+          break
+        end
+      end
+      self:WriteOutbox()
+      if self.Chat then self.Chat:PingAnswered(nil) end
+      self:StartNextSend()
     else
       entry.waiting = nil
       entry.stuck = true
@@ -240,6 +256,7 @@ function ns:CheckDelivered(entry, attempt)
 end
 
 --- A reload writes SavedVariables, and the bridge reads any reply still waiting there.
+--- Only the Reload UI button calls this.
 function ns:Flush()
   self.db.reopen = self.UI and self.UI:IsOpen() or false
   if self.Game then self.Game:Count("reloads", 10, "reload") end

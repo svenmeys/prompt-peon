@@ -8,7 +8,7 @@ import time
 import urllib.error
 from pathlib import Path
 
-from . import console, gametext, previews, safefiles, settings, t3errors, t3remote, threadstate
+from . import bells, console, gametext, previews, safefiles, settings, t3errors, t3remote, threadstate
 
 
 class Bridge:
@@ -52,6 +52,10 @@ class Bridge:
         self.send_times: list[float] = []
         self.session = secrets.token_hex(4)  # With `revision`, tells the addon which snapshot is newer.
         self.revision = 0
+        # How many times the update bell has rung, and what it last rang for. See bells.py.
+        self.bells = wow_dir / "Interface/AddOns" / settings.ADDON / "bells"
+        self.bell = bells.rung(self.bells)
+        self.bell_shape, self.bell_unrung = None, False
         allow_files = self.config().get("pictures") is True  # Only an explicit yes counts.
         self.previews = previews.Previews(wow_dir / "Interface/AddOns" / settings.ADDON / "previews", remote, allow_files=allow_files, state_path=state_dir / "previews.json")
 
@@ -123,6 +127,8 @@ class Bridge:
         self.snapshot_path = addon / "Snapshot.lua"
         self.previews.use_folder(addon / "previews")
         self.last_written, self.last_write_at = "", 0.0
+        self.bells = addon / "bells"
+        self.bell, self.bell_shape, self.bell_unrung = bells.rung(self.bells), None, False
         self.helpers_checked_at, self.helpers_changed = None, []
         self.was_withheld = False
         self.outbox_path_now = None

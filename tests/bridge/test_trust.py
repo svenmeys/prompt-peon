@@ -48,7 +48,7 @@ class ThreadTextNeedsTrust(Base):
         self.assertIn("s", row)
         self.assertIn("rm", row, "the log still has to know this agent has full access")
         self.assertIn("SomeoneElse isn't trusted yet", bridge.snapshot["lk"])
-        self.assertIn(f'" -I "{settings.PROGRAM_DIR / settings.ENTRY_POINT}" trust SomeoneElse', bridge.snapshot["lk"],
+        self.assertIn(f'" -I "{gates.without_your_name(settings.PROGRAM_DIR / settings.ENTRY_POINT)}" trust SomeoneElse', bridge.snapshot["lk"],
                       "the notice names the exact command, so an agent that built the addon can trust it")
 
     def test_saying_yes_brings_the_words_back_with_no_restart(self):
@@ -91,7 +91,7 @@ class ThreadTextNeedsTrust(Base):
         bridge, _ = self.make()
         refused = gates.refused_by_other_addons(bridge)
         self.assertTrue(refused.startswith("failed: MyAddon is installed"), refused)
-        self.assertIn(f'"{settings.PROGRAM_DIR / settings.ENTRY_POINT}" trust MyAddon', refused)
+        self.assertIn(f'"{gates.without_your_name(settings.PROGRAM_DIR / settings.ENTRY_POINT)}" trust MyAddon', refused)
 
     def test_a_hundred_addons_are_still_one_short_line(self):
         self.install_other(*(f"Addon{number:03d}" for number in range(100)))

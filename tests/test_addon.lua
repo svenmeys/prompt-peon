@@ -43,7 +43,7 @@ local function drainSend()
 end
 
 PROMPTPEON_SNAPSHOT = snapshot()
-PromptPeonDB = { firstTracked = true }
+PromptPeonDB = { inbox = 1, partyOn = true } -- An install already on the inbox defaults, with the party frames turned on.
 -- Load what the game loads, in the game's order, so a file left out of the .toc fails here too.
 for line in io.lines("addon/PromptPeon/PromptPeon.toc") do
   local name = line:match("^([%w_]+%.lua)%s*$")
@@ -56,6 +56,7 @@ stub.runTimers()
 check("snapshot read at login", ns.snapshot and #ns.snapshot.threads == 2)
 check("global cleared after reading", PROMPTPEON_SNAPSHOT == nil)
 check("outbox starts empty", PromptPeonOutbox == "")
+check("expanded tables kept by an earlier build are dropped once", PromptPeonDB.wideTablesBy == "mark" and next(PromptPeonDB.wideTables) == nil)
 check("tracker reads working count", PromptPeonTracker.text.text:find("1 working", 1, true), PromptPeonTracker.text.text)
 -- What the log's buttons do, for tests about what happens next rather than the button.
 local press = {}
@@ -301,11 +302,25 @@ stub.mouseOver = true
 for _ = 1, 60 do PromptPeonFrame.scripts.OnUpdate(PromptPeonFrame) end
 check("full when the mouse is on it", PromptPeonFrame.alpha > 0.98, PromptPeonFrame.alpha)
 
--- Without the send addons (game not restarted yet): fall back to a reload, and say nothing is lost.
+-- Without the send addons (game not restarted yet): nothing reloads by itself. The message waits,
+-- the log says how to send it, and the Reload UI button is the player's choice.
 stub.carriersExist = false
 reloadsBefore = stub.reloads
 press.send(PromptPeonDB.selected, "old way")
-check("falls back to a reload", stub.reloads == reloadsBefore + 1)
+check("a send without the send addons doesn't reload", stub.reloads == reloadsBefore, stub.reloads)
+check("the message is kept", #PromptPeonDB.pending == 1 and PromptPeonOutbox ~= "")
+ns.UI:Render()
+check("the log says it's saved and how to send it", ns.UI.notice.text:find("Saved", 1, true) and ns.UI.notice.text:find("Reload UI", 1, true), ns.UI.notice.text)
+check("and offers the reload", ns.UI.reload.shown == true)
+ns:QueueCommand(PromptPeonDB.selected, "diff")
+check("a button that asks the companion app doesn't reload either", stub.reloads == reloadsBefore, stub.reloads)
+stub.inCombat = true
+ns.UI.reload.scripts.OnClick()
+check("the reload button waits out a fight", stub.reloads == reloadsBefore)
+stub.inCombat = false
+ns.UI.reload.scripts.OnClick()
+check("pressing Reload UI is what reloads", stub.reloads == reloadsBefore + 1)
+table.remove(PromptPeonDB.pending) -- The diff ask. The reply is what the next lines follow.
 stub.carriersExist = true
 stub.now = stub.now + 100
 stub.slotData = snapshot({ ack = 7, res = { ["7"] = "sent" } })
@@ -473,9 +488,82 @@ check("chat lines stay a sensible length", (function()
   return true
 end)())
 
--- /peon status.
-ns.Chat:Status()
-check("/peon status reports live updates left", table.concat(stub.chat, "\n", math.max(#stub.chat - 1, 1)):find("live updates left", 1, true), stub.chat[#stub.chat])
+-- The connection check in Options: one line per link, and a real round trip for sending.
+do
+  local function saidSince(from) return table.concat(stub.chat, "\n", from + 1) end
+  local chatFrom, slotFrom = #stub.chat, ns.nextSlot
+  stub.now = stub.now + 100
+  stub.slotData = snapshot({ ack = 7, at = time() + 5002 })
+  ns.Chat:CheckConnection()
+  local said = saidSince(chatFrom)
+  check("the check spends one update, to be about now", ns.nextSlot == slotFrom + 1)
+  check("it says the companion app is running", said:find("1. Companion app:", 1, true) and said:find("running", 1, true), said)
+  check("and that T3 is connected", said:find("2. T3:", 1, true) and said:find("connected", 1, true), said)
+  check("and how many live updates are left", said:find("3. Live updates:", 1, true) and said:find("left", 1, true), said)
+  local ping = PromptPeonDB.pending[#PromptPeonDB.pending]
+  check("then it asks the companion app to answer", ping and ping.command == "ping" and ping.text == "\1ping" and said:find("asking the companion app", 1, true), said)
+  chatFrom = #stub.chat
+  ns.Chat:CheckConnection()
+  check("a second check waits for the first", saidSince(chatFrom):find("still waiting", 1, true) and PromptPeonDB.pending[#PromptPeonDB.pending] == ping)
+  drainSend()
+  chatFrom = #stub.chat
+  stub.now = stub.now + 100
+  stub.slotData = snapshot({ ack = ping.seq, at = time() + 5003, res = { [tostring(ping.seq)] = "sent" } })
+  ns:RefreshAndRender()
+  stub.timers = {}
+  check("the answer says sending works", saidSince(chatFrom):find("4. Sending from the game:", 1, true) and saidSince(chatFrom):find("works", 1, true), saidSince(chatFrom))
+  check("and the check is gone from the queue", #PromptPeonDB.pending == 0)
+
+  -- A refusal is named, in the companion app's own words.
+  ns.Chat:CheckConnection()
+  ping = PromptPeonDB.pending[#PromptPeonDB.pending]
+  drainSend()
+  chatFrom = #stub.chat
+  stub.now = stub.now + 100
+  stub.slotData = snapshot({ ack = ping.seq, at = time() + 5004, res = { [tostring(ping.seq)] = "failed: SomeAddon isn't trusted yet" } })
+  ns:RefreshAndRender()
+  stub.timers = {}
+  check("a refusal is passed on as the broken link", saidSince(chatFrom):find("4. Sending from the game:", 1, true)
+    and saidSince(chatFrom):find("SomeAddon isn't trusted yet", 1, true) and not saidSince(chatFrom):find("did not go through", 1, true), saidSince(chatFrom))
+
+  -- No answer at all: the check says so and leaves the queue, so a real reply isn't held up behind it.
+  ns.Chat:CheckConnection()
+  ping = PromptPeonDB.pending[#PromptPeonDB.pending]
+  chatFrom = #stub.chat
+  for _ = 1, 12 do
+    drainSend()
+    stub.now = stub.now + 100
+    stub.slotData = snapshot({ ack = ping.seq - 1, at = time() + 5005 + stub.now })
+    stub.runTimers()
+  end
+  check("no answer is named too", saidSince(chatFrom):find("didn't hear it", 1, true), saidSince(chatFrom))
+  check("and the check doesn't stay in the way", #PromptPeonDB.pending == 0 and not ns:NeedsReload(), #PromptPeonDB.pending)
+
+  -- Before the game has restarted there is nothing to ask with.
+  stub.carriersExist = false
+  chatFrom = #stub.chat
+  ns.Chat:CheckConnection()
+  check("without the send addons it says to restart, and asks nothing", saidSince(chatFrom):find("waits for a restart", 1, true) and #PromptPeonDB.pending == 0, saidSince(chatFrom))
+  stub.carriersExist = true
+
+  -- The companion app isn't there: stop at the first link.
+  chatFrom = #stub.chat
+  stub.now = stub.now + 100
+  stub.slotData = snapshot({ ack = 7, at = time() - 5000 })
+  ns.Chat:CheckConnection()
+  said = saidSince(chatFrom)
+  check("a quiet companion app is the first broken link", said:find("not answering", 1, true) and said:find("run the installer again", 1, true), said)
+  check("and the rest is left unchecked", not said:find("2. T3", 1, true) and #PromptPeonDB.pending == 0, said)
+  stub.inCombat = true
+  chatFrom = #stub.chat
+  ns.Chat:CheckConnection()
+  check("in a fight it waits", saidSince(chatFrom):find("after the fight", 1, true) ~= nil)
+  stub.inCombat = false
+  stub.now = stub.now + 100
+  stub.slotData = snapshot({ ack = 7, at = time() + 5900 })
+  ns:RefreshAndRender()
+  stub.timers = {}
+end
 
 -- Text size.
 check("default text is a bit smaller", PromptPeonBody.size == 11 and PromptPeonSmall.size == 10 and PromptPeonTitle.size == 13, PromptPeonBody.size)
@@ -637,26 +725,35 @@ PromptPeonDB.expanded = {}
 ns.UI:Render()
 local working = ns:ThreadById(THREAD)
 local quiet = ns:ThreadById(OTHER)
-check("a working agent tracks itself", ns:IsTracked(working))
-check("a finished thread does not", not ns:IsTracked(quiet))
-local trackRow = ns.UI.trackRows[1]
-check("it is on the tracker", trackRow.shown and trackRow.title.text:find("Feel", 1, true), trackRow.title.text)
+local function trackRowFor(words)
+  for _, row in ipairs(ns.UI.trackRows or {}) do
+    if row.shown and tostring(row.title.text):find(words, 1, true) then return row end
+  end
+end
+check("a working agent isn't pinned by itself", not ns:IsTracked(working) and trackRowFor("Feel") == nil)
+check("nor is a finished thread", not ns:IsTracked(quiet))
+ns:ToggleTracked(working)
+local trackRow = trackRowFor("Feel")
+check("pinned by hand, it is on the tracker", trackRow ~= nil and ns:IsTracked(working))
 check("it starts collapsed, with WoW's plus", trackRow.fold.texture:find("UI-PlusButton-Up", 1, true) and not trackRow.body.shown)
 stub.shift = false
 trackRow.scripts.OnClick(trackRow, "LeftButton")
+trackRow = trackRowFor("Feel")
 check("clicking expands it, with WoW's minus", trackRow.fold.texture:find("UI-MinusButton-Up", 1, true) and trackRow.body.shown)
 check("expanded shows activity", trackRow.body.text:find("Thinking", 1, true), trackRow.body.text)
 check("expanded shows todo progress and the step", trackRow.body.text:find("1/3  Second", 1, true), trackRow.body.text)
 check("expanded shows the latest words", trackRow.body.text:find("Latest words", 1, true), trackRow.body.text)
 trackRow.scripts.OnClick(trackRow, "LeftButton")
-check("clicking again collapses it", not trackRow.body.shown)
+check("clicking again collapses it", not trackRowFor("Feel").body.shown)
+PromptPeonDB.seen[OTHER] = math.huge -- Read, so only a pin can put it on the tracker.
+ns.UI:Render()
+check("a finished thread you've read isn't on the tracker", trackRowFor("Quiet one") == nil)
 ns:ToggleTracked(quiet)
-check("/peon track pins any thread", ns:IsTracked(quiet))
-check("pinned threads reach the tracker", ns.UI.trackRows[2].shown)
+check("pinning puts any thread on it", ns:IsTracked(quiet) and trackRowFor("Quiet one") ~= nil)
 stub.shift = true
-ns.UI.trackRows[2].scripts.OnClick(ns.UI.trackRows[2], "LeftButton")
+trackRowFor("Quiet one").scripts.OnClick(trackRowFor("Quiet one"), "LeftButton")
 stub.shift = false
-check("shift-click untracks", not ns:IsTracked(quiet))
+check("shift-click unpins", not ns:IsTracked(quiet) and trackRowFor("Quiet one") == nil)
 stub.shift = true
 local listRow
 for _, row in ipairs(ns.UI.rows) do
@@ -664,10 +761,10 @@ for _, row in ipairs(ns.UI.rows) do
 end
 listRow.scripts.OnClick(listRow, "LeftButton")
 stub.shift = false
-check("shift-click in the log tracks", ns:IsTracked(quiet))
-PromptPeonDB.tracked[THREAD] = false
-ns.UI:Render()
-check("a working agent can be untracked", not ns:IsTracked(working))
+check("shift-click in the log pins", ns:IsTracked(quiet))
+ns:ToggleTracked(working)
+check("unpinned, a working agent leaves the tracker", not ns:IsTracked(working) and trackRowFor("Feel") == nil)
+PromptPeonDB.seen[OTHER] = nil
 PromptPeonDB.tracked = {}
 ns.UI:Render()
 
@@ -730,7 +827,7 @@ local function menuItem(words)
     if button.shown and tostring(button.text.text):sub(-#words) == words then return button end
   end
 end
-check("the menu offers the actions", menuItem("Open") and menuItem("Stop tracking") and menuItem("Hide...") and menuItem("Snooze..."), "menu")
+check("the menu offers the actions", menuItem("Open") and menuItem("Track") and menuItem("Hide...") and menuItem("Snooze..."), "menu")
 check("and only those", not menuItem("Reply in chat") and not menuItem("New thread in this project") and not menuItem("Change face"))
 menuItem("Open").scripts.OnClick(menuItem("Open"))
 check("choosing closes the menu", not ns.UI.menuCatcher.shown)
@@ -755,7 +852,7 @@ end)())
 check("the open thread moves off a hidden one", ns.UI.title.text ~= "Feel", ns.UI.title.text)
 check("hidden threads leave the tracker", not (ns.UI.trackRows[1].shown and ns.UI.trackRows[1].thread.id == THREAD))
 check("hidden threads leave the party", not ns.UI.party.shown)
-check("hidden threads leave the counts", ns:Counts().running == 0 and PromptPeonTracker.text.text:find("working", 1, true) == nil, PromptPeonTracker.text.text)
+check("hidden threads leave the counts", ns:Counts().running == 0 and (not PromptPeonTracker.shown or PromptPeonTracker.text.text:find("working", 1, true) == nil), PromptPeonTracker.text.text)
 feel("done", { })
 check("hidden threads make no noise", #stub.played == 0 and #stub.banners == 0)
 local hiddenHeader
@@ -773,10 +870,11 @@ menuItem("Show").scripts.OnClick(menuItem("Show"))
 check("it comes back", not ns:IsHidden(ns:ThreadById(THREAD)))
 PromptPeonDB.hiddenOpen = nil
 for _, row in ipairs(ns.UI.rows) do
-  if row.shown and row.project == "other" then listRow = row end
+  if row.shown and row.thread and row.thread.id == OTHER then listRow = row end
 end
 listRow.scripts.OnClick(listRow, "RightButton")
-menuItem("Hide this project").scripts.OnClick(menuItem("Hide this project"))
+menuItem("Hide...").scripts.OnClick(menuItem("Hide..."))
+menuItem("All of other").scripts.OnClick(menuItem("All of other"))
 check("hiding a project hides its threads", ns:IsHidden(ns:ThreadById(OTHER)))
 PromptPeonDB.hiddenProjects = {}
 PromptPeonDB.hiddenThreads = {}
@@ -833,9 +931,9 @@ check("the background slider works and says the percentage", PromptPeonDB.opacit
 PromptPeonDB.opacity = opacityBefore
 ns.UI:Render()
 check("the page gets its room in the scroll area", ns.UI.detailContent.height >= optionsPage.height, ns.UI.detailContent.height)
-ns.UI.back.scripts.OnClick(ns.UI.back)
+ns.UI.options.scripts.OnClick(ns.UI.options)
 stub.timers = {}
-check("back leaves the page", ns.UI.showOptions == nil and not optionsPage.shown and ns.UI.title.text ~= "Options", ns.UI.title.text)
+check("pressing the Options tab again leaves the page", ns.UI.showOptions == nil and not optionsPage.shown and ns.UI.title.text ~= "Options", ns.UI.title.text)
 
 -- Markdown blocks.
 local MD = ns.Markdown
@@ -909,6 +1007,83 @@ check("a table wider than the window still fits", (function()
   end
   return true
 end)())
+
+-- Expanding a table: its columns get the room they need, and it scrolls sideways when that is
+-- wider than the window. Collapsing squeezes it back. All live, without a reload.
+local function tableHead(words)
+  for _, head in ipairs(ns.UI.heads) do
+    if head.shown and tostring(head.text.text):find(words, 1, true) then return head end
+  end
+end
+local function shownScroller()
+  for _, scroller in ipairs(ns.UI.tableScrollers or {}) do
+    if scroller.shown then return scroller end
+  end
+end
+local reloadsBefore = stub.reloads
+local expand = tableHead("Expand table")
+check("a table has an expand control under it", expand ~= nil)
+check("it sits below the table's last row", expand and expand.lastPoint and lineWith("wider") and -expand.lastPoint[5] > -lineWith("wider").lastPoint[5],
+  expand and expand.lastPoint and expand.lastPoint[5])
+check("a squeezed table does not scroll sideways", shownScroller() == nil)
+if expand then expand.scripts.OnClick(expand) end
+local scroller = shownScroller()
+check("expanded, a wide table scrolls sideways", scroller ~= nil)
+check("its columns keep their own width, wider than the window",
+  scroller and scroller.content.width > ns.UI.detailScroll:GetWidth(), scroller and scroller.content.width)
+check("its cells are drawn inside the scrolling part", scroller and scroller.lines and scroller.lines[1] and scroller.lines[1].shown
+  and tostring(scroller.lines[1].text):find("a", 1, true))
+check("the window itself does not get wider", (function()
+  for _, line in ipairs(ns.UI.lines) do
+    if line.shown and line.width > ns.UI.detailScroll:GetWidth() then return false end
+  end
+  return true
+end)())
+check("a bar under it scrolls it", scroller and scroller.slider and scroller.slider.shown)
+if scroller and scroller.slider then
+  scroller.slider.scripts.OnValueChanged(scroller.slider, 120)
+end
+check("moving the bar moves the table", scroller and scroller.offset == 120, scroller and scroller.offset)
+check("the control now collapses it", tableHead("Collapse table") ~= nil and tableHead("Expand table") == nil)
+stub.now = stub.now + 100
+stub.slotData = snapshot({ ack = PromptPeonDB.nextSeq - 1, at = mdStamp + 2.5, threads = { { id = THREAD, p = "Shop", t = "Wide", s = "done", u = time(), m = { { "a", longTable, "d", 1 } } } } })
+ns:RefreshAndRender()
+check("it stays expanded when the thread refreshes", shownScroller() ~= nil and tableHead("Collapse table") ~= nil)
+-- A reload or a new login starts with nothing folded or unfolded by hand. Saved settings bring the table back.
+local groupsBefore = ns.UI.groups
+ns.UI.groups = {}
+ns.UI:Render()
+check("an expanded table is still expanded after a reload", shownScroller() ~= nil and tableHead("Collapse table") ~= nil)
+ns.UI.groups = groupsBefore
+check("and keeps where you scrolled to", shownScroller() and shownScroller().offset == 120, shownScroller() and shownScroller().offset)
+local collapse = tableHead("Collapse table")
+if collapse then collapse.scripts.OnClick(collapse) end
+check("collapsed, it fits the window again", shownScroller() == nil and tableHead("Expand table") ~= nil and lineWith("wider")
+  and lineWith("wider").width <= ns.UI.detailScroll:GetWidth())
+ns.UI.groups = {}
+ns.UI:Render()
+check("and a collapsed one stays collapsed after a reload", shownScroller() == nil and tableHead("Expand table") ~= nil)
+check("nothing is kept for a table you collapsed again", next(PromptPeonDB.wideTables) == nil)
+local secretKey = ns.UI.TableKey(nil, { { "Private acquisition target", "Price" } }, 1)
+check("a table on a page without a message key is remembered by a checksum, never by its words",
+  not secretKey:find("Private", 1, true) and not secretKey:find("Price", 1, true) and secretKey == ns.UI.TableKey(nil, { { "Private acquisition target", "Price" } }, 1)
+  and secretKey ~= ns.UI.TableKey(nil, { { "Something else", "Price" } }, 1), secretKey)
+check("with a message key it goes by that", ns.UI.TableKey("thread:7", {}, 2) == "table:thread:7:2")
+for index = 1, 250 do PromptPeonDB.wideTables["table:old:" .. index] = index end
+ns.UI:RememberWideTable("table:new:1", true)
+local keptTables = 0
+for _ in pairs(PromptPeonDB.wideTables) do keptTables = keptTables + 1 end
+check("only the newest expanded tables are remembered", keptTables <= 200 and PromptPeonDB.wideTables["table:new:1"] and not PromptPeonDB.wideTables["table:old:1"], keptTables)
+PromptPeonDB.wideTables = {}
+check("expanding and collapsing never needs a reload", stub.reloads == reloadsBefore and not ns:NeedsReload())
+
+local narrowTable = "| a | b |\n|---|---|\n| 1 | 2 |"
+stub.now = stub.now + 100
+stub.slotData = snapshot({ ack = PromptPeonDB.nextSeq - 1, at = mdStamp + 2.7, threads = { { id = THREAD, p = "Shop", t = "Narrow", s = "done", u = time(), m = { { "a", narrowTable, "d", 1 } } } } })
+ns:RefreshAndRender()
+check("a table that already fits has no expand control", tableHead("Expand table") == nil and tableHead("Collapse table") == nil and lineWith("2") ~= nil)
+check("and it does not scroll sideways", shownScroller() == nil)
+
 stub.now = stub.now + 100
 stub.slotData = snapshot({ ack = PromptPeonDB.nextSeq - 1, at = mdStamp + 3 })
 ns:RefreshAndRender()
@@ -964,7 +1139,7 @@ stub.slotData = snapshot({ ack = PromptPeonDB.nextSeq - 1, at = trackStamp, thre
     { "d", "[x] One\n[>] Build it\n[ ] Three", "r", 1 }, { "a", "I found the cause. It takes a long explanation that no tracker should try to show in full.", "d", 2 } } },
   { id = OTHER, p = "other", t = "Quiet", s = "done", u = time() - 600, m = { { "a", "All merged and deployed.\n\n" .. string.rep("Lots of detail. ", 50), "d", 2 } } },
 } })
-PromptPeonDB.tracked = { [OTHER] = true }
+PromptPeonDB.tracked = { [OTHER] = true, [THREAD] = true }
 PromptPeonDB.expanded = { [THREAD] = true, [OTHER] = true }
 ns:RefreshAndRender()
 local busyBody, quietBody
@@ -1105,7 +1280,7 @@ check("the thread shows until you ask", lineWith("main thread words"))
 ns.UI.agents.scripts.OnClick(ns.UI.agents)
 sentCommand = PromptPeonDB.pending[1]
 check("opening asks the bridge for their words", sentCommand and sentCommand.text == "\1agents", sentCommand and sentCommand.text)
-check("the button goes back", ns.UI.agents.label == "Back to thread")
+check("the tab is pressed, and pressing it again goes back", ns.UI.agents:GetChecked() == true and ns.UI.agents.detail:find("again", 1, true))
 check("the thread's words step aside", not lineWith("main thread words"))
 check("each agent shows name and model on the left", ns.UI.heads[1].text.text:find("Review the bridge", 1, true) and ns.UI.heads[1].text.text:find("gpt-6-astra", 1, true), ns.UI.heads[1].text.text)
 check("and its state in the right column", ns.UI.heads[1].right.text:find("done", 1, true), ns.UI.heads[1].right.text)
@@ -1152,7 +1327,7 @@ sentCommand = PromptPeonDB.pending[1]
 check("opening asks the bridge for the diff", sentCommand and sentCommand.text == "\1diff", sentCommand and sentCommand.text)
 check("it lists what it knows straight away", ns.UI.heads[1].text.text:find("x.lua", 1, true) and lineWith("Asking T3..."))
 check("those can't be opened yet", not ns.UI.heads[1].fold.shown)
-check("the button goes back", ns.UI.changes.label == "Back to thread")
+check("the tab is pressed, and pressing it again goes back", ns.UI.changes:GetChecked() == true and ns.UI.changes.detail:find("again", 1, true))
 drainSend()
 changedThread({ dn = "", df = {
   { "src/ui/x.lua", 1, 1, PATCH, true },
@@ -1348,7 +1523,8 @@ local STAY = "aaaaaaaa-0000-0000-0000-000000000001"
 local function stayRow(status, extra)
   ctlStamp = ctlStamp + 1
   stub.now = stub.now + 100
-  local threads = { { id = STAY, p = "Shop", t = "Stays", s = status, u = time() } }
+  -- Each time it has said something new, so finished means finished and not yet read.
+  local threads = { { id = STAY, p = "Shop", t = "Stays", s = status, u = time(), m = { { "a", "words", "d", ctlStamp } } } }
   for _, row in ipairs(extra or {}) do threads[#threads + 1] = row end
   stub.slotData = snapshot({ ack = PromptPeonDB.nextSeq - 1, at = ctlStamp, threads = threads })
   ns:RefreshAndRender()
@@ -1357,23 +1533,30 @@ end
 local partyWasOn = PromptPeonDB.partyOn
 PromptPeonDB.partyOn = true
 PromptPeonDB.tracked = {}
+PromptPeonDB.seen[STAY] = math.huge
 stayRow("done")
-check("a thread nobody tracked stays out of the party", not ns.UI.party.shown)
+check("a finished thread you've read stays out of the party", not ns.UI.party.shown)
+PromptPeonDB.seen[STAY] = nil
 stayRow("running")
 check("working puts it in the party", ns.UI.party.shown and ns.UI.partyRows[1].name.text == "Stays")
 check("at full light", ns.UI.partyRows[1].debuff.texture:find("Interface\\Icons", 1, true), ns.UI.partyRows[1].debuff.texture)
 stayRow("done")
-check("finishing keeps it in the party", ns.UI.party.shown and ns.UI.partyRows[1].name.text == "Stays")
+check("finishing keeps it in the party until you've read it", ns.UI.party.shown and ns.UI.partyRows[1].name.text == "Stays")
 check("with a ready check instead of a task icon", ns.UI.partyRows[1].debuff.texture:find("ReadyCheck-Ready", 1, true), ns.UI.partyRows[1].debuff.texture)
 stayRow("error")
 check("a failed one gets the red cross", ns.UI.partyRows[1].debuff.texture:find("UI-GroupLoot-Pass-Up", 1, true))
 stayRow("done", { { id = "bbbbbbbb-0000-0000-0000-000000000002", p = "Shop", t = "Busy", s = "running", u = time(), a = "Thinking" } })
 check("a busy agent goes first, ahead of a finished one", ns.UI.partyRows[1].name.text == "Busy" and ns.UI.partyRows[2].name.text == "Stays", ns.UI.partyRows[1].name.text)
+PromptPeonDB.seen[STAY] = math.huge
+stayRow("done")
+check("reading it takes it out of the party", not ns.UI.party.shown or ns.UI.partyRows[1].name.text ~= "Stays")
 ns:ToggleTracked(ns:ThreadById(STAY))
 stayRow("done")
-check("taking it off the list takes it out of the party", not ns.UI.party.shown or ns.UI.partyRows[1].name.text ~= "Stays")
+check("unless you pinned it", ns.UI.party.shown and ns.UI.partyRows[1].name.text == "Stays")
+ns:ToggleTracked(ns:ThreadById(STAY))
 stayRow("running")
-check("and it stays off when it works again", PromptPeonDB.tracked[STAY] == false)
+check("and it's back when it works again, without pinning itself", ns.UI.partyRows[1].name.text == "Stays" and PromptPeonDB.tracked[STAY] == nil)
+PromptPeonDB.seen[STAY] = nil
 PromptPeonDB.partyOn = partyWasOn
 PromptPeonDB.tracked = {}
 ctlStamp = ctlStamp + 1
@@ -1410,10 +1593,14 @@ reloadState(0)
 ns:WarnAboutReload()
 check("running out says so once more", #stub.chat == chatBefore + 2 and stub.chat[#stub.chat]:find("stopped", 1, true), stub.chat[#stub.chat])
 check("and the footer says reload now", ns.UI.reloadHint.text.text == "Reload now", ns.UI.reloadHint.text.text)
-ns.Chat:Status()
-local statusWords = table.concat(stub.chat, "\n", math.max(#stub.chat - 1, 1))
-check("/peon status uses plain words", statusWords:find("0 live updates left before you need a reload", 1, true), statusWords)
-check("and shows how long sending takes", statusWords:find("Sending: the last step took", 1, true), statusWords)
+local checkFrom = #stub.chat
+ns.Chat:CheckConnection()
+local statusWords = table.concat(stub.chat, "\n", checkFrom + 1)
+check("the connection check says when live updates have run out", statusWords:find("3. Live updates:", 1, true) and statusWords:find("Live updates have stopped", 1, true), statusWords)
+for index = #PromptPeonDB.pending, 1, -1 do
+  if PromptPeonDB.pending[index].command == "ping" then table.remove(PromptPeonDB.pending, index) end
+end
+ns.Chat.pingAt = nil
 ns.nextSlot = savedSlot
 ns.warnedSoon, ns.warnedStopped = nil, nil
 do
@@ -2051,7 +2238,7 @@ grip.scripts.OnUpdate(grip)
 check("dragging the corner up and left shrinks it by exactly that much", window2.width == 720 and window2.height == 470, window2.width)
 stub.cursorX, stub.cursorY = -5000, 5000
 grip.scripts.OnUpdate(grip)
-check("it stops at the smallest size", window2.width == ns.UI.minWidth and window2.height == 240, window2.width)
+check("it stops at the smallest size", window2.width == ns.UI.minWidth and window2.height == ns.UI.MIN_HEIGHT, window2.height)
 stub.cursorX, stub.cursorY = 900000, -900000
 grip.scripts.OnUpdate(grip)
 check("it can't get bigger than the screen", window2.width == UIParent:GetWidth() - window2:GetLeft() and window2.height == window2:GetTop(), window2.width)
@@ -2110,9 +2297,8 @@ check("earned ones are gold, with an icon and the date", achievementHead("Zug Zu
 check("the rest are grey", achievementHead("Hogger").text.text:find("|cff808080Hogger", 1, true), achievementHead("Hogger").text.text)
 check("counted ones show how far along you are", achievementHead("Quest Hub").right.text:find("3 of 10", 1, true), achievementHead("Quest Hub").right.text)
 check("earned come first", ns.UI.heads[1].text.text:find("Zug Zug", 1, true), ns.UI.heads[1].text.text)
-check("the view buttons step aside", not ns.UI.changes.shown and not ns.UI.agents.shown)
-ns.UI.back.scripts.OnClick(ns.UI.back)
-check("back goes back", ns.UI.showAchievements == nil and ns.UI.title.text ~= "Achievements", ns.UI.title.text)
+ns.UI.achievementsIcon.scripts.OnClick(ns.UI.achievementsIcon)
+check("pressing the Achievements tab again leaves the page", ns.UI.showAchievements == nil and ns.UI.title.text ~= "Achievements", ns.UI.title.text)
 PromptPeonDB.achievements = {}
 local earnChat = #stub.chat
 Game:Earn("hogger")
@@ -2326,11 +2512,12 @@ drainSend()
 PromptPeonDB.hiddenProjects, PromptPeonDB.hiddenThreads = {}, {}
 qShow({ { id = THREAD, p = "Shop", t = "Hide me", s = "done", u = time(), m = { { "a", "done", "d", 1 } } } })
 for _, row in ipairs(ns.UI.rows) do
-  if row.shown and row.project == "Shop" then projectRow = row end
+  if row.shown and row.thread and row.thread.id == THREAD then projectRow = row end
 end
 projectRow.scripts.OnClick(projectRow, "RightButton")
-menuItem("Hide this project").scripts.OnClick(menuItem("Hide this project"))
-check("the project menu sends it too", lastPending().text:find("\1hidden\np:Shop", 1, true), lastPending().text)
+menuItem("Hide...").scripts.OnClick(menuItem("Hide..."))
+menuItem("All of Shop").scripts.OnClick(menuItem("All of Shop"))
+check("hiding a whole project from a thread's menu sends it too", lastPending().text:find("\1hidden\np:Shop", 1, true), lastPending().text)
 drainSend()
 listRow = nil
 for _, row in ipairs(ns.UI.rows) do
@@ -2471,8 +2658,8 @@ UI2:ThreadMenu(UI2.frame, ns:ThreadById(MENU_THREAD), true)
 check("a party frame adds Change face", menuItem("Change face"))
 check("and no longer holds model, effort or spells", not menuItem("Cast a spell >"))
 UI2:CloseMenu()
-UI2:ProjectMenu(UI2.frame, "Shop")
-check("a project offers new thread, collapse and hide", menuItem("New thread here") and menuItem("Collapse") and menuItem("Hide this project"))
+UI2:ThreadMenu(UI2.frame, ns:ThreadById(MENU_THREAD))
+check("a thread's menu starts a new thread in its project", menuItem("New thread in Shop") ~= nil)
 UI2:CloseMenu()
 
 -- Model and effort sit by the reply box.
@@ -2605,9 +2792,9 @@ do local function parkedAndMarks()
   check("a settled row has a greyed check mark", listed(DONE_ONE).statusIcon.texture == "Interface\\Buttons\\UI-CheckBox-Check" and listed(DONE_ONE).statusIcon.desaturated == true, listed(DONE_ONE).statusIcon.texture)
   local order = {}
   for _, row in ipairs(UI3.rows) do
-    if row.shown and (row.project or row.foldKey) then order[#order + 1] = row.project or row.foldKey end
+    if row.shown and row.foldKey then order[#order + 1] = row.foldKey end
   end
-  check("projects first, then snoozed, then settled", table.concat(order, ",") == "Shop,snoozedOpen,settledOpen", table.concat(order, ","))
+  check("snoozed and settled come last, in that order", table.concat(order, ","):find("snoozedOpen,settledOpen$") ~= nil, table.concat(order, ","))
   -- Which project a settled thread came from has to be readable at a glance.
   local OTHER_ONE = "aaaaaaaa-0000-0000-0000-00000000000a"
   local mixed = {
@@ -2618,15 +2805,11 @@ do local function parkedAndMarks()
   parkedShow(mixed)
   local seen = {}
   for _, row in ipairs(UI3.rows) do
-    if row.shown then
-      if row.thread and row.thread.pk then
-        seen[#seen + 1] = row.thread.t
-      elseif not row.thread and not row.project and not row.foldKey then
-        seen[#seen + 1] = "<" .. row.text.text:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "") .. ">"
-      end
+    if row.shown and row.thread and row.thread.pk then
+      seen[#seen + 1] = row.tag.text:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "") .. " " .. row.thread.t
     end
   end
-  check("settled threads sit under their project, newest project first", table.concat(seen, ",") == "<Shop>,Old job,Older job,<Other>,Other job", table.concat(seen, ","))
+  check("settled threads are a flat list, each tagged with its project's two letters", table.concat(seen, ",") == "SH Old job,OT Other job,SH Older job", table.concat(seen, ","))
   parkedShow(PARKED)
   -- A long list makes room for its scroll bar, so the bar covers neither the marks nor the thread's name.
   local manyRows = {}
@@ -2717,9 +2900,9 @@ do local function parkedAndMarks()
   PromptPeonDB.tracked[MENU_THREAD] = nil
   local titleOnly = markOf("needs").text.text
   check("no marks left in the words", not titleOnly:find("!", 1, true) and not titleOnly:find("?", 1, true) and not titleOnly:find("*", 1, true), titleOnly)
-  check("a project row has no mark", (function()
+  check("a group heading has no mark and no tag", (function()
     for _, row in ipairs(UI3.rows) do
-      if row.shown and row.project and row.statusIcon.shown then return false end
+      if row.shown and not row.thread and (row.statusIcon.shown or row.tag.text ~= "") then return false end
     end
     return true
   end)())
@@ -2793,25 +2976,31 @@ do local function parkedAndMarks()
     UI3:Render()
   end
 
-  -- The pages hang off the window's right edge as tabs, like the spellbook's. Only the dice stay up by the close button.
+  -- The pages hang off the window's right edge as tabs, like the spellbook's. Only the close button stays up top on the right.
   do
     local tabs = UI3.sideTabs or {}
-    check("the side tabs come in order", #tabs == 3 and tabs[1] == UI3.reportIcon and tabs[2] == UI3.achievementsIcon
-      and tabs[3] == UI3.options, #tabs)
+    check("the side tabs come in order: the three pages, then the open thread's three", #tabs == 6 and tabs[1] == UI3.reportIcon
+      and tabs[2] == UI3.achievementsIcon and tabs[3] == UI3.options and tabs[4] == UI3.changes and tabs[5] == UI3.pullRequests
+      and tabs[6] == UI3.agents, #tabs)
     local offEdge = #tabs > 0
-    for _, tab in ipairs(tabs) do
-      local point = tab.lastPoint or {}
+    for index = 1, 3 do
+      local point = tabs[index].lastPoint or {}
       offEdge = offEdge and point[1] == "TOPLEFT" and point[2] == UI3.frame and point[3] == "TOPRIGHT"
     end
     check("each one sits off the right edge, none in the title bar", offEdge)
-    local pitchOk = #tabs == 3
-    for index = 2, #tabs do
+    local pitchOk = #tabs == 6
+    for index = 2, 3 do
       pitchOk = pitchOk and tabs[index - 1].lastPoint[5] - tabs[index].lastPoint[5] >= 49
     end
     check("far enough apart that the tab art doesn't overlap", pitchOk)
-    check("the dice stay in the title bar", UI3.greedIcon.lastPoint and UI3.greedIcon.lastPoint[2] == UI3.frame and UI3.greedIcon.lastPoint[1] == "TOPRIGHT"
-      and UI3.needIcon.lastPoint and UI3.needIcon.lastPoint[2] == UI3.greedIcon)
+    check("the dice and coin are gone from the title bar", UI3.greedIcon == nil and UI3.needIcon == nil)
     check("they're tabs you can see pressed", UI3.options.kind == "CheckButton" and UI3.achievementsIcon.kind == "CheckButton")
+    local glowing = #tabs > 0
+    for _, tab in ipairs(tabs) do
+      local pressed = tab:GetCheckedTexture()
+      glowing = glowing and pressed ~= nil and pressed.blendMode == "ADD"
+    end
+    check("a pressed tab glows over its icon and doesn't cover it", glowing)
     local reloads = stub.reloads
     UI3.options.scripts.OnClick(UI3.options)
     check("the options tab opens Options and stays pressed", UI3.showOptions == true and UI3.options:GetChecked() == true)
@@ -2825,14 +3014,14 @@ do local function parkedAndMarks()
     -- The smallest window still has room for every tab beside it, and the screen edge can't swallow them.
     local window = UI3.frame
     local widthWas, heightWas = window:GetSize()
-    window:SetSize(300, 240)
+    window:SetSize(300, UI3.MIN_HEIGHT)
     window.scripts.OnSizeChanged(window)
     UI3:Render()
     local lowest = 0
     for _, tab in ipairs(tabs) do
       if tab.shown then lowest = math.max(lowest, -tab.lastPoint[5] + tab.height + 13) end -- The art hangs 13 below the button.
     end
-    check("every tab fits beside the smallest window", lowest > 0 and lowest <= 240, lowest)
+    check("every page tab fits beside the smallest window", lowest > 0 and lowest <= UI3.MIN_HEIGHT, lowest)
     check("the window keeps its tabs on screen", window.clampInsets and window.clampInsets[2] >= 32)
     window:SetSize(widthWas, heightWas)
     window.scripts.OnSizeChanged(window)
@@ -2865,6 +3054,62 @@ do local function parkedAndMarks()
       stub.timers = {}
     end
     show()
+    -- The open thread's own tabs: a second group under the pages, off the right edge, with a count each.
+    do
+      local function y(tab) return tab.lastPoint and tab.lastPoint[5] end
+      local function onEdge(tab)
+        local point = tab.lastPoint or {}
+        return tab.shown and point[1] == "TOPLEFT" and point[2] == UI3.frame and point[3] == "TOPRIGHT"
+      end
+      check("a thread with only pull requests gets only that tab", onEdge(UI3.pullRequests) and not UI3.changes.shown and not UI3.agents.shown)
+      check("it starts a second group, a gap below Options", y(UI3.options) - y(UI3.pullRequests) == UI3.sideTabPitch + UI3.sideTabGap,
+        y(UI3.options) - y(UI3.pullRequests))
+      check("with its count on it", tostring(UI3.pullRequests.count.text) == "2", tostring(UI3.pullRequests.count.text))
+      show({ ch = { { "a.lua", 3, 1 } }, ag = { { "k1", "Scout", "d" } }, agn = 4 })
+      check("a thread with all three gets all three, in order", onEdge(UI3.changes) and onEdge(UI3.pullRequests) and onEdge(UI3.agents)
+        and y(UI3.options) - y(UI3.changes) == UI3.sideTabPitch + UI3.sideTabGap
+        and y(UI3.changes) - y(UI3.pullRequests) == UI3.sideTabPitch and y(UI3.pullRequests) - y(UI3.agents) == UI3.sideTabPitch)
+      check("agents count how many it sent out", tostring(UI3.agents.count.text) == "4", tostring(UI3.agents.count.text))
+      check("changes have no count until the files are here", tostring(UI3.changes.count.text) == "", tostring(UI3.changes.count.text))
+      check("they left the thread's header", (function()
+        for _, button in ipairs({ UI3.changes, UI3.pullRequests, UI3.agents }) do
+          if button.lastPoint[2] == UI3.title then return false end
+        end
+        return true
+      end)())
+      local window = UI3.frame
+      local widthWas, heightWas = window:GetSize()
+      window:SetSize(300, UI3.MIN_HEIGHT)
+      window.scripts.OnSizeChanged(window)
+      UI3:Render()
+      local lowest = 0
+      for _, tab in ipairs(UI3.sideTabs) do
+        if tab.shown then lowest = math.max(lowest, -tab.lastPoint[5] + tab.height + 13) end
+      end
+      check("all six tabs and their art fit beside the smallest window", lowest == 334 and lowest <= UI3.MIN_HEIGHT, lowest)
+      window:SetSize(widthWas, heightWas)
+      window.scripts.OnSizeChanged(window)
+      local reloads = stub.reloads
+      UI3.pullRequests.scripts.OnClick(UI3.pullRequests)
+      check("a thread tab opens its view and stays pressed", UI3.views[PR_THREAD] == "prs" and UI3.pullRequests:GetChecked() == true
+        and UI3.changes:GetChecked() == false)
+      UI3.pullRequests.scripts.OnClick(UI3.pullRequests)
+      check("pressing it again goes back to the thread and lets go", UI3.views[PR_THREAD] == nil and UI3.pullRequests:GetChecked() == false)
+      UI3.options.scripts.OnClick(UI3.options)
+      check("with a page open the thread's tabs stay where they are, unpressed", UI3.changes.shown and UI3.pullRequests.shown and UI3.agents.shown
+        and UI3.pullRequests:GetChecked() == false and y(UI3.options) - y(UI3.changes) == UI3.sideTabPitch + UI3.sideTabGap)
+      UI3.options.scripts.OnClick(UI3.options)
+      check("and are still there with the thread", UI3.changes.shown and UI3.pullRequests.shown and UI3.agents.shown)
+      local game = ns.Game
+      ns.Game = nil
+      UI3:Render()
+      check("without the game files the gap still separates Options from the thread's tabs",
+        y(UI3.options) == UI3.sideTabTop and y(UI3.options) - y(UI3.changes) == UI3.sideTabPitch + UI3.sideTabGap)
+      ns.Game = game
+      check("none of it asks for a reload", stub.reloads == reloads)
+      PromptPeonDB.pending = {}
+      show()
+    end
     check("a thread with pull requests has the icon", UI3.pullRequests.shown and UI3.pullRequests.label == "Pull requests (2)", UI3.pullRequests.label)
     check("the tooltip sums them up", UI3.pullRequests.detail == "2 pull requests: 1 open, 1 merged.", UI3.pullRequests.detail)
     check("the summary line says where one stands", UI3.PullRequestLine(PRS[1]):find("CI failing", 1, true) and UI3.PullRequestLine(PRS[1]):find("(3/5)", 1, true) and UI3.PullRequestLine(PRS[1]):find("changes requested", 1, true) and UI3.PullRequestLine(PRS[1]):find("has conflicts", 1, true), UI3.PullRequestLine(PRS[1]))
@@ -3118,7 +3363,7 @@ do local function parkedAndMarks()
     UI5.options.scripts.OnClick(UI5.options)
     check("Options still opens", UI5.showOptions and UI5.optionsPage and UI5.optionsPage.shown and UI5.title.text == "Options", UI5.title.text)
     check("in place of the empty words", not UI5.empty.shown)
-    UI5.back.scripts.OnClick(UI5.back)
+    UI5.options.scripts.OnClick(UI5.options)
     check("and closes again", not UI5.optionsPage.shown and UI5.empty.shown)
     ns.Game:OpenAchievements()
     check("Achievements opens too", UI5.title.text == "Achievements", UI5.title.text)
@@ -3387,8 +3632,7 @@ end parkedAndMarks() end
 
 local box2 = ns.UI.input.EditBox
 box2:SetText("my draft for this thread")
-ns.UI:ProjectMenu(ns.UI.frame, "Other")
-menuItem("New thread here").scripts.OnClick(menuItem("New thread here"))
+ns.UI:StartNewThread("Other")
 local function pageHead(text)
   for _, head in ipairs(ns.UI.heads) do
     if head.shown and head.text.text:find(text, 1, true) then return head end
@@ -3434,8 +3678,8 @@ PromptPeonDB.drafts, PromptPeonDB.results = {}, {}
 menuThread("done")
 ns.UI:StartNewThread()
 box2:SetText("half written")
-ns.UI.back.scripts.OnClick(ns.UI.back)
-check("Back leaves the page", ns.UI.title.text == "Menu" and ns.UI.newThread == nil, ns.UI.title.text)
+ns.UI.newButton.scripts.OnClick(ns.UI.newButton)
+check("pressing + again leaves the page", ns.UI.title.text == "Menu" and ns.UI.newThread == nil, ns.UI.title.text)
 ns.UI:StartNewThread()
 check("what you had written is still there next time", box2:GetText() == "half written", box2:GetText())
 PromptPeonDB.selected = THREAD
@@ -3592,21 +3836,23 @@ stub.now = stub.now + 100
 stub.slotData = snapshot({ ack = PromptPeonDB.nextSeq - 1, at = ctlStamp, threads = { { id = THREAD, p = "Shop", t = "In the list", s = "done", u = time() } } })
 ns:RefreshAndRender()
 stub.timers = {}
-local projectRow, threadInList
+local quietRow, threadInList
 for _, row in ipairs(ns.UI.rows) do
-  if row.shown and row.project == "Shop" then projectRow = row end
+  if row.shown and row.foldKey == "quietClosed" then quietRow = row end
   if row.shown and row.thread and row.thread.id == THREAD then threadInList = row end
 end
-check("an open project shows WoW's minus", projectRow.fold.shown and projectRow.fold.texture:find("UI-MinusButton-Up", 1, true))
-check("no typed mark is left", not projectRow.text.text:find("^[-+] "), projectRow.text.text)
+check("the open Quiet group shows WoW's minus", quietRow.fold.shown and quietRow.fold.texture:find("UI-MinusButton-Up", 1, true))
+check("no typed mark is left", not quietRow.text.text:find("^[-+] "), quietRow.text.text)
 check("a thread row has no button", not threadInList.fold.shown)
-PromptPeonDB.collapsed.Shop = true
-ns.UI:Render()
+check("and says its project in two letters", threadInList.tag.text:find("SH", 1, true) ~= nil, threadInList.tag.text)
+quietRow.scripts.OnClick(quietRow, "LeftButton")
+threadInList = nil
 for _, row in ipairs(ns.UI.rows) do
-  if row.shown and row.project == "Shop" then projectRow = row end
+  if row.shown and row.foldKey == "quietClosed" then quietRow = row end
+  if row.shown and row.thread and row.thread.id == THREAD then threadInList = row end
 end
-check("a closed project shows WoW's plus", projectRow.fold.texture:find("UI-PlusButton-Up", 1, true))
-PromptPeonDB.collapsed.Shop = nil
+check("a click closes it, with WoW's plus, and it stays closed", quietRow.fold.texture:find("UI-PlusButton-Up", 1, true) and threadInList == nil and PromptPeonDB.quietClosed == true)
+PromptPeonDB.quietClosed = nil
 ctlStamp = ctlStamp + 1
 stub.now = stub.now + 100
 stub.slotData = snapshot({ ack = PromptPeonDB.nextSeq - 1, at = ctlStamp })
@@ -3645,7 +3891,6 @@ window:SetSize(300, 240)
 window.scripts.OnSizeChanged(window)
 check("a small window keeps its spells and drops the reload estimate", not ns.UI.reloadHint.shown and Game.spellBar.buttons[2].shown)
 check("and Send gets narrower", ns.UI.send.width == 60, ns.UI.send.width)
-check("the reply box gives up some room", ns.UI.holder.height == 40, ns.UI.holder.height)
 check("the cogwheel and Send stay", ns.UI.options.shown and ns.UI.send.shown)
 ns.UI:ToggleList()
 check("bringing the list back makes room for it", window:GetWidth() == 526 and PromptPeonDB.width == 526, window:GetWidth())
@@ -3824,23 +4069,10 @@ do
     return rows
   end
 
-  -- The tracker on a new install.
-  PromptPeonDB.tracked, PromptPeonDB.firstTracked = {}, nil
+  -- Nothing pins itself, on a new install or later. The tracker is an inbox, and a pin is yours.
+  PromptPeonDB.tracked = {}
   arrive(seven())
-  local tracked = 0
-  for number = 1, 7 do if PromptPeonDB.tracked["first-" .. number] then tracked = tracked + 1 end end
-  check("a new install tracks its first five quests", tracked == 5 and PromptPeonDB.tracked["first-1"] and not PromptPeonDB.tracked["first-6"], tracked)
-  PromptPeonDB.tracked["first-2"] = false
-  arrive(seven())
-  check("once, and what you untrack stays untracked", PromptPeonDB.tracked["first-2"] == false and not PromptPeonDB.tracked["first-6"])
-  PromptPeonDB.tracked, PromptPeonDB.firstTracked = { [LATER] = true }, nil
-  arrive(seven())
-  check("an install already in use is left alone", not PromptPeonDB.tracked["first-3"])
-  PromptPeonDB.tracked, PromptPeonDB.firstTracked = {}, nil
-  PromptPeonDB.hiddenThreads = { ["first-1"] = true }
-  arrive(seven())
-  check("a hidden thread isn't tracked", not PromptPeonDB.tracked["first-1"] and PromptPeonDB.tracked["first-6"])
-  PromptPeonDB.hiddenThreads = {}
+  check("a new install pins nothing", next(PromptPeonDB.tracked) == nil)
 
   -- Party frames.
   PromptPeonDB.partyOn = true
@@ -3848,44 +4080,64 @@ do
   check("off stays off, instead of falling back to the default", PromptPeonDB.partyOn == false, tostring(PromptPeonDB.partyOn))
   press.party()
 
-  -- Back, always at the top.
+  -- No Back button anywhere. The side tabs never move, the pressed one is where you are, and
+  -- pressing it again or clicking the thread's name in the list brings you back to the thread.
   local rows = seven()
+  rows[1].ch, rows[1].prs, rows[1].ag, rows[1].agn = { { "a.lua", 1, 1 } }, { { n = 7, ti = "A PR", st = "open" } }, { { "k", "Scout", "d" } }, 1
   arrive(rows)
   local ui = ns.UI
-  check("no Back on the thread itself", not ui.back.shown)
-  ui:ToggleOptions()
-  check("Options has Back", ui.back.shown and ui.back.text == "Back", ui.back.text)
-  check("the title makes room for it", ui.title.lastPoint ~= nil)
-  check("nothing below moves over, so it makes no column", ui.meta.lastPoint[2] == ui.back, tostring(ui.meta.lastPoint[2]))
-  check("the old button is gone", ui.optionsPage.backToThread == nil)
-  ui.back.scripts.OnClick(ui.back)
-  check("Back leaves Options", not ui.showOptions and not ui.back.shown)
-  check("and the line under the title goes back under it", ui.meta.lastPoint[2] == ui.title, tostring(ui.meta.lastPoint[2]))
-  ui.showAchievements = true
-  ui:Render()
-  check("Achievements has Back", ui.back.shown)
-  ui.back.scripts.OnClick(ui.back)
-  check("Back leaves Achievements", not ui.showAchievements and not ui.back.shown)
-  ui:StartNewThread("Shop")
-  check("the New thread page has Back", ui.back.shown)
-  ui.back.scripts.OnClick(ui.back)
-  check("Back leaves the New thread page", ui.newThread == nil and not ui.back.shown)
   local id = rows[1].id
-  ui.views[id] = "changes"
+  ui:OpenThread(id)
+  local function tabSpots()
+    local spots = {}
+    for index, tab in ipairs(ui.sideTabs) do spots[index] = (tab.shown and "shown" or "hidden") .. tostring(tab.lastPoint and tab.lastPoint[5]) end
+    return table.concat(spots, " ")
+  end
+  local onThread = tabSpots()
+  check("there is no Back button", ui.back == nil and ui.GoBack == nil)
+  check("the thread has all six tabs", ui.changes.shown and ui.pullRequests.shown and ui.agents.shown and ui.options.shown)
+  ui.options.scripts.OnClick(ui.options)
+  check("Options opens", ui.showOptions == true and ui.title.text == "Options")
+  check("and not one tab moved or went away", tabSpots() == onThread, tabSpots())
+  check("only the Options tab is pressed", ui.options:GetChecked() == true and ui.changes:GetChecked() == false)
+  check("the title doesn't move over for a button", ui.title.lastPoint[4] == ui.titleLeft or ui.title.lastPoint[1] == "RIGHT", tostring(ui.title.lastPoint[4]))
+  ui.achievementsIcon.scripts.OnClick(ui.achievementsIcon)
+  check("Achievements keeps them all too", ui.showAchievements == true and tabSpots() == onThread, tabSpots())
+  local sent = #PromptPeonDB.pending
+  ui.changes.scripts.OnClick(ui.changes)
+  check("a thread tab pressed from a page goes straight to that view", not ui.showAchievements and ui.views[id] == "changes" and ui.changes:GetChecked() == true
+    and ui.achievementsIcon:GetChecked() == false and #PromptPeonDB.pending == sent + 1)
+  ui.options.scripts.OnClick(ui.options)
+  ui.changes.scripts.OnClick(ui.changes)
+  check("from a page, the tab of the view you had open shows that view and doesn't close it", not ui.showOptions and ui.views[id] == "changes")
+  ui.changes.scripts.OnClick(ui.changes)
+  check("pressed again on its own view, it goes back to the thread", ui.views[id] == nil and ui.changes:GetChecked() == false)
+  ui.agents.scripts.OnClick(ui.agents)
+  check("a pressed tab still says what it is", ui.agents.label == "Agents (1)" and ui.agents.detail:find("again", 1, true), ui.agents.detail)
+  local function clickInList(threadId)
+    for _, row in ipairs(ui.rows) do
+      if row.shown and row.thread and row.thread.id == threadId then row.scripts.OnClick(row, "LeftButton") end
+    end
+  end
+  clickInList(id)
+  check("clicking the thread's name in the list shows the thread itself", ui.views[id] == nil and PromptPeonDB.selected == id)
+  ui.views[id], ui.prOpen[id] = "prs", 7
   ui:Render()
-  check("a thread's Changes has Back", ui.back.shown)
-  ui.back.scripts.OnClick(ui.back)
-  check("Back returns to the thread", ui.views[id] == nil and not ui.back.shown)
-  ui.views[id], ui.prOpen[id] = "prs", 1
-  ui:Render()
-  ui.back.scripts.OnClick(ui.back)
-  check("Back goes up one level at a time", ui.views[id] == "prs" and ui.prOpen[id] == nil)
-  ui.back.scripts.OnClick(ui.back)
-  check("and then back to the thread", ui.views[id] == nil)
+  ui.pullRequests.scripts.OnClick(ui.pullRequests)
+  check("the pull requests tab pressed on one pull request's page goes back to the thread", ui.views[id] == nil and ui.prOpen[id] == nil)
+  ui:StartNewThread("Shop")
+  check("the New thread page keeps the tabs too", ui.newThread ~= nil and tabSpots() == onThread, tabSpots())
+  ui.agents.scripts.OnClick(ui.agents)
+  check("a thread tab leaves the New thread page", ui.newThread == nil and ui.views[id] == "agents")
+  clickInList(id)
+  ui.options.scripts.OnClick(ui.options)
+  clickInList(id)
+  check("clicking the thread in the list leaves Options", not ui.showOptions and ui.title.text ~= "Options")
+  PromptPeonDB.pending = {}
   ui.showAchievements = true
   ui:Render()
   ui:OpenThread(rows[2].id)
-  check("opening a thread leaves the page it was on", not ui.showAchievements and not ui.back.shown and PromptPeonDB.selected == rows[2].id)
+  check("opening a thread leaves the page it was on", not ui.showAchievements and PromptPeonDB.selected == rows[2].id)
   ui.showReport = true
   ui:OpenThread(rows[1].id)
   check("that goes for What happened too", not ui.showReport)
@@ -4302,19 +4554,50 @@ do
   check("a small one doesn't", not chatHas("Did someone say", chat + 1))
 
   arrive({ row({ id = ID, s = "needs" }), row({ id = ID2, t = "Other", s = "needs" }) })
-  check("need counts who's waiting", tostring(ui.needIcon.count.text) == "2", tostring(ui.needIcon.count.text))
-  ui:NextRoll("need")
-  check("clicking need goes to the next one", PromptPeonDB.selected == ID2, PromptPeonDB.selected)
-  ui:NextRoll("need")
+  -- The key binding that replaced the Need dice: the next thread waiting on you, round and round.
+  check("two threads are waiting on you", #ui.Waiting() == 2, #ui.Waiting())
+  check("the key has a name in the game's key bindings", BINDING_NAME_PROMPTPEON_NEXT_WAITING ~= nil and BINDING_NAME_PROMPTPEON_REPLY ~= nil)
+  PromptPeonDB.selected = ID
+  ui.frame:Hide()
+  PromptPeon_NextWaiting()
+  check("with the log closed, the key opens it on the first one waiting", ui:IsOpen() and PromptPeonDB.selected == ID, PromptPeonDB.selected)
+  PromptPeon_NextWaiting()
+  check("pressed again, it goes to the next one", PromptPeonDB.selected == ID2, PromptPeonDB.selected)
+  PromptPeon_NextWaiting()
   check("and around again", PromptPeonDB.selected == ID, PromptPeonDB.selected)
+  ui.frame:Hide()
+  ui.input.EditBox:ClearFocus()
+  PromptPeon_Reply()
+  check("the reply key opens the log, and waits for the key press to be over", ui:IsOpen() and not ui.input.EditBox:HasFocus())
+  stub.runTimers()
+  check("then the cursor is in the box", ui.input.EditBox:HasFocus())
+  ui.input.EditBox:ClearFocus()
+  PromptPeon_Reply()
+  ui.frame:Hide()
+  stub.runTimers()
+  check("a log closed in that moment doesn't take the keyboard", not ui.input.EditBox:HasFocus())
+  ui.frame:Show()
+  check("every key sits in a Prompt Peon section of Key Bindings", (function()
+    local bindings, named = 0, 0
+    for line in io.lines("addon/PromptPeon/Bindings.xml") do
+      if line:find("<Binding ", 1, true) then
+        bindings = bindings + 1
+        if line:find('category="BINDING_HEADER_PROMPTPEON"', 1, true) then named = named + 1 end
+      end
+    end
+    return bindings == 3 and named == 3 and BINDING_HEADER_PROMPTPEON == "Prompt Peon"
+  end)())
+  ui.input.EditBox:ClearFocus()
   ctlStamp = ctlStamp + 1
   stub.now = stub.now + 100
   PromptPeonDB.seen[ID2] = -1
   stub.slotData = snapshot({ ack = PromptPeonDB.nextSeq - 1, at = ctlStamp, pk = {}, threads = { row({ id = ID, s = "running" }), row({ id = ID2, t = "Other", s = "done", u = time() + 500, m = { { "a", "fresh", "d", 99 } } }) } })
   ns:RefreshAndRender()
   stub.timers = {}
-  check("greed counts unread finished work", #ui.Rolls("greed") == 1 and ui.Rolls("greed")[1].id == ID2, #ui.Rolls("greed"))
-  check("nobody waiting means no need", #ui.Rolls("need") == 0)
+  local chatBefore, selectedBefore = #stub.chat, PromptPeonDB.selected
+  PromptPeon_NextWaiting()
+  check("with nobody waiting the key says so and changes nothing", #ui.Waiting() == 0 and PromptPeonDB.selected == selectedBefore
+    and chatHas("Nobody is waiting on you", chatBefore + 1))
   PromptPeonDB.selected = nil
   PromptPeonDB.results = {}
   stub.errors = {}
@@ -4466,7 +4749,7 @@ end
 
 -- Answering an agent's question from the game, instead of only in T3.
 do
-  local MARK = "c664b892"
+  local MARK = "c664b892c664b892c664b892c664b892"
   local function click(head) head.scripts.OnClick(head) end
   local function lastPending() return PromptPeonDB.pending[#PromptPeonDB.pending] end
   -- Its own row, because later tests reuse the name working for something else.
@@ -4572,6 +4855,583 @@ do
   show(needing({ s = "running", m = { { "a", "Thanks, going on", "d", 10 } } }))
   check("a question that went away ends typing", ns.UI.answering == nil and ns.UI.hint.text:find("Reply to", 1, true), ns.UI.hint.text)
   check("and sends nothing", #PromptPeonDB.pending == queuedBefore, #PromptPeonDB.pending)
+end
+
+-- An inbox first: the tracker and the top of the list hold what needs you and what you haven't read.
+do
+  local ui = ns.UI
+  local ASK, FRESH, BUSY, READ, PIN = "inbox-ask", "inbox-fresh", "inbox-busy", "inbox-read", "inbox-pin"
+  local function arrive(extra)
+    stub.now = stub.now + 100
+    local threads = {
+      { id = BUSY, p = "Shop", t = "Still working", s = "running", u = time() },
+      { id = READ, p = "Shop", t = "Read already", s = "done", u = time() - 50, m = { { "a", "old news", "d", 5 } } },
+      { id = FRESH, p = "Bank", t = "Just finished", s = "done", u = time(), m = { { "a", "fresh news", "d", 9 } } },
+      { id = ASK, p = "Bank", t = "Has a question", s = "needs", u = time() },
+      { id = PIN, p = "Shop", t = "Pinned by hand", s = "done", u = time() - 90, m = { { "a", "pinned", "d", 3 } } },
+    }
+    stub.slotData = snapshot({ ack = PromptPeonDB.nextSeq - 1, at = time() + 70000 + stub.now, pk = {}, threads = threads })
+    ns:RefreshAndRender()
+    stub.timers = {}
+  end
+  PromptPeonDB.hiddenThreads, PromptPeonDB.hiddenProjects, PromptPeonDB.tracked = {}, {}, {}
+  PromptPeonDB.seen = { [READ] = 100, [PIN] = 100, [BUSY] = 100 }
+  PromptPeonDB.trackerOff, PromptPeonDB.listHidden = nil, nil
+  ui.filterBox:SetText("")
+  ui.frame:Hide()
+  arrive()
+  local function trackerTitles()
+    local titles = {}
+    for _, row in ipairs(ui.trackRows or {}) do
+      if row.shown then titles[#titles + 1] = tostring(row.title.text) end
+    end
+    return table.concat(titles, "\n")
+  end
+  check("what it wants from you is 'needs' for a question, 'unread' for finished work you haven't read",
+    ns:WantsYou(ns:ThreadById(ASK)) == "needs" and ns:WantsYou(ns:ThreadById(FRESH)) == "unread"
+    and ns:WantsYou(ns:ThreadById(READ)) == nil and ns:WantsYou(ns:ThreadById(BUSY)) == nil)
+  local titles = trackerTitles()
+  check("the tracker lists the thread waiting on you and the unread finished one", titles:find("Has a question", 1, true) and titles:find("Just finished", 1, true), titles)
+  check("a working thread is only in the count on the top line", not titles:find("Still working", 1, true)
+    and PromptPeonTracker.text.text:find("1 working", 1, true), PromptPeonTracker.text.text)
+  check("finished work you've read isn't on it", not titles:find("Read already", 1, true) and not titles:find("Pinned by hand", 1, true), titles)
+  check("the one waiting on you comes first", titles:find("Has a question", 1, true) < titles:find("Just finished", 1, true), titles)
+  check("a working thread doesn't pin itself any more", PromptPeonDB.tracked[BUSY] == nil)
+  check("a failed thread is waiting on you too, to resurrect it or let it go", ns:WantsYou({ id = "dead", s = "error" }) == "needs")
+  ns:ToggleTracked(ns:ThreadById(PIN))
+  check("a thread you pin by hand stays on the tracker", ns:IsTracked(ns:ThreadById(PIN)) and trackerTitles():find("Pinned by hand", 1, true), trackerTitles())
+  ns:ToggleTracked(ns:ThreadById(PIN))
+  check("and leaves when you unpin it", not ns:IsTracked(ns:ThreadById(PIN)) and not trackerTitles():find("Pinned by hand", 1, true))
+
+  -- The list: two groups on top, then the rest under its project.
+  ui.frame:Show()
+  PromptPeonDB.selected = BUSY
+  arrive()
+  local function listRows()
+    local shown = {}
+    for _, row in ipairs(ui.rows) do
+      if row.shown then shown[#shown + 1] = tostring(row.text.text) end
+    end
+    return shown
+  end
+  local function at(words)
+    for index, text in ipairs(listRows()) do
+      if text:find(words, 1, true) then return index end
+    end
+  end
+  local function times(words)
+    local count = 0
+    for _, text in ipairs(listRows()) do
+      if text:find(words, 1, true) then count = count + 1 end
+    end
+    return count
+  end
+  check("the list starts with Needs you, and the thread that's waiting", at("Needs you") == 1 and at("Has a question") == 2, table.concat(listRows(), " / "))
+  check("then Unread, and the finished thread you haven't read", at("Unread") == 3 and at("Just finished") == 4, table.concat(listRows(), " / "))
+  check("then Working, with the agent that's busy", at("Working") == 5 and at("Still working") == 6, table.concat(listRows(), " / "))
+  check("then Quiet, with everything else", at("Quiet") == 7 and at("Read already") == 8 and at("Pinned by hand") == 9, table.concat(listRows(), " / "))
+  check("each thread is in the list once", times("Has a question") == 1 and times("Just finished") == 1 and times("Still working") == 1)
+  check("no project has a heading of its own", at("Bank") == nil and at("Shop") == nil, table.concat(listRows(), " / "))
+  check("the groups count what's in them", listRows()[1]:find("(1)", 1, true) and listRows()[3]:find("(1)", 1, true) and listRows()[7]:find("(2)", 1, true), listRows()[7])
+  local function tagOf(threadId)
+    for _, row in ipairs(ui.rows) do
+      if row.shown and row.thread and row.thread.id == threadId then return (row.tag.text:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")) end
+    end
+  end
+  check("each line says its project in two letters", tagOf(ASK) == "BA" and tagOf(BUSY) == "SH", tostring(tagOf(ASK)))
+  check("a name of several words gives its initials", ui.ProjectTag("Goblin Bank") == "GB" and ui.ProjectTag("t3-forever") == "TF" and ui.ProjectTag("x") == "X" and ui.ProjectTag("") == "?")
+  check("the same project always has the same colour, and it is one of ours", select(2, ui.ProjectTag("Shop")) == select(2, ui.ProjectTag("Shop")) and #select(2, ui.ProjectTag("Shop")) == 6)
+  PromptPeonDB.quietClosed, PromptPeonDB.workingClosed = true, true
+  ui:Render()
+  check("Working and Quiet fold away, and stay folded", at("Working") and at("Still working") == nil and at("Quiet") and at("Read already") == nil, table.concat(listRows(), " / "))
+  check("what needs you and what you haven't read can't be folded away", at("Has a question") == 2 and at("Just finished") == 4)
+  PromptPeonDB.quietClosed, PromptPeonDB.workingClosed = nil, nil
+  for _, row in ipairs(ui.rows) do
+    if row.shown and row.thread and row.thread.id == FRESH then row.scripts.OnClick(row, "LeftButton") end
+  end
+  ui:Render()
+  check("reading it takes it out of Unread and into Quiet", at("Unread") == nil and at("Quiet") and at("Just finished") > at("Quiet"), table.concat(listRows(), " / "))
+  check("and off the tracker", not trackerTitles():find("Just finished", 1, true), trackerTitles())
+  local game = ns.Game
+  ns.Game = nil
+  ui:Render()
+  check("without the game files there is no Unread, and Needs you still works", at("Needs you") == 1 and at("Unread") == nil)
+  ns.Game = game
+  ui:Render()
+end
+
+-- Working from the tracker: answer a question, or approve in yolo mode, without opening the log.
+-- And a tracker that goes away when nothing is happening.
+do
+  local ui = ns.UI
+  local Q, AP, IDLE = "tr-question", "tr-approval", "tr-idle"
+  local MARK, AMARK = "0badf00d0badf00d0badf00d0badf00d", "feedbeeffeedbeeffeedbeeffeedbeef"
+  local COLOR = { h = "Color", t = "Which color?", m = false, c = true, o = { { "Red", "Warm" }, { "Blue", "Cool" } } }
+  local EXTRAS = { h = "Extras", t = "Which extras?", m = true, c = false, o = { { "Wheels", "" }, { "Bell", "" } } }
+  local stamp = 0
+  local function arrive(threads, extra)
+    stamp = stamp + 1
+    stub.now = stub.now + 100
+    local values = { ack = PromptPeonDB.nextSeq - 1, at = time() + 60000 + stamp, pk = {}, threads = threads }
+    for key, value in pairs(extra or {}) do values[key] = value end
+    stub.slotData = snapshot(values)
+    ns:RefreshAndRender()
+    stub.timers = {}
+  end
+  -- Each set of questions is its own request in T3, so it has its own mark.
+  local function question(questions)
+    local mark = #questions == 1 and questions[1] == COLOR and MARK or (#questions == 2 and "0badf00e0badf00e0badf00e0badf00e" or "0badf00f0badf00f0badf00f0badf00f")
+    return { id = Q, p = "Shop", t = "Asks a thing", s = "needs", a = "Waiting for your answer", uq = true, u = time(),
+      m = { { "q", "Which color?", "r", 9, { r = mark, q = questions } } } }
+  end
+  local function approval(words, reason)
+    return { id = AP, p = "Shop", t = "Wants to run", s = "needs", a = "Waiting for your approval", u = time(),
+      m = { { "p", words or "make all", "r", 4, { r = AMARK, k = "run a command", y = reason } } } }
+  end
+  local function choices()
+    local lines = {}
+    for _, line in ipairs(ui.trackChoices or {}) do
+      if line.shown then lines[#lines + 1] = line end
+    end
+    return lines
+  end
+  local function choice(words)
+    for _, line in ipairs(choices()) do
+      if tostring(line.text.text):find(words, 1, true) then return line end
+    end
+  end
+  local function rowFor(words)
+    for _, row in ipairs(ui.trackRows or {}) do
+      if row.shown and tostring(row.title.text):find(words, 1, true) then return row end
+    end
+  end
+  local function lastSent() return PromptPeonDB.pending[#PromptPeonDB.pending] end
+  PromptPeonDB.hiddenThreads, PromptPeonDB.hiddenProjects, PromptPeonDB.tracked, PromptPeonDB.pending = {}, {}, {}, {}
+  PromptPeonDB.trackerOff = nil
+  ui.answers, ui.answerSent = {}, {}
+  ui.frame:Hide()
+
+  -- A question with one pick: the answers are on the tracker, and one click sends.
+  arrive({ question({ COLOR }) })
+  local row = rowFor("Asks a thing")
+  check("a thread waiting on you shows its question on the tracker without a click", row and row.body.shown and tostring(row.body.text):find("Which color?", 1, true),
+    row and row.body.text)
+  check("with its answers as lines to click", choice("Red") ~= nil and choice("Blue") ~= nil and #choices() == 3, #choices())
+  check("and a way to the log for an answer of your own", choice("Something else") ~= nil)
+  choice("Blue").scripts.OnClick(choice("Blue"))
+  check("one click sends that answer", lastSent() and lastSent().command == "answer" and lastSent().text == "\1answer\n" .. MARK .. "\no:2", lastSent() and lastSent().text)
+  check("the log stays closed", not ui:IsOpen())
+  check("and the lines give way to a word that it went", #choices() == 0 and tostring(rowFor("Asks a thing").body.text):find("Answer sent", 1, true), rowFor("Asks a thing").body.text)
+  drainSend()
+  PromptPeonDB.pending, ui.answerSent = {}, {}
+  arrive({ question({ COLOR }) })
+  choice("Something else").scripts.OnClick(choice("Something else"))
+  check("your own answer is typed in the log", ui:IsOpen() and PromptPeonDB.selected == Q and #PromptPeonDB.pending == 0)
+  ui.frame:Hide()
+
+  -- More than the tracker can take in one click goes to the log.
+  arrive({ question({ COLOR, EXTRAS }) })
+  check("several questions, or one with several picks, open the log to answer", #choices() == 1 and choice("Open the log") ~= nil, #choices())
+  choice("Open the log").scripts.OnClick(choice("Open the log"))
+  check("that line opens the thread", ui:IsOpen() and PromptPeonDB.selected == Q)
+  ui.frame:Hide()
+  arrive({ question({ EXTRAS }) })
+  check("a pick-several question does too", #choices() == 1 and choice("Open the log") ~= nil)
+
+  -- Approvals: nothing to click unless yolo mode is on.
+  arrive({ approval() })
+  row = rowFor("Wants to run")
+  check("an approval shows what it asks", row and tostring(row.body.text):find("make all", 1, true), row and row.body.text)
+  check("with yolo mode off there is nothing to click, and it says where to answer", #choices() == 0 and tostring(row.body.text):find("in T3", 1, true), row.body.text)
+  check("and the log has no Approve either", ui.OpenApproval(ns:ThreadById(AP)) == nil)
+  arrive({ approval() }, { yo = true })
+  check("with yolo mode on the tracker offers Approve and Decline", choice("Approve") ~= nil and choice("Decline") ~= nil and #choices() == 2, #choices())
+  choice("Approve").scripts.OnClick(choice("Approve"))
+  check("Approve sends the request's mark and the decision", lastSent() and lastSent().command == "approve" and lastSent().text == "\1approve\n" .. AMARK .. "\naccept", lastSent() and lastSent().text)
+  check("and can't be pressed twice", #choices() == 0 and tostring(rowFor("Wants to run").body.text):find("Sent", 1, true), rowFor("Wants to run").body.text)
+  drainSend()
+  PromptPeonDB.pending, ui.answerSent = {}, {}
+  arrive({ approval() }, { yo = true })
+  choice("Decline").scripts.OnClick(choice("Decline"))
+  check("Decline sends decline", lastSent().text == "\1approve\n" .. AMARK .. "\ndecline", lastSent().text)
+  drainSend()
+  PromptPeonDB.pending, ui.answerSent = {}, {}
+  local long = string.rep("echo a very long command ", 40)
+  arrive({ approval(long) }, { yo = true })
+  check("one too long to read whole on the tracker is approved in the log", choice("Approve") == nil and choice("Open the log") ~= nil, #choices())
+  choice("Open the log").scripts.OnClick(choice("Open the log"))
+  local function logLine(words)
+    for _, head in ipairs(ui.heads) do
+      if head.shown and tostring(head.text.text):find(words, 1, true) then return head end
+    end
+  end
+  local drawn = {}
+  for _, line in ipairs(ui.lines) do if line.shown then drawn[#drawn + 1] = tostring(line.text) end end
+  check("the log shows all of it", table.concat(drawn, "\n"):gsub("%s+", " "):find(string.rep("echo a very long command ", 40):gsub("%s+$", ""), 1, true) ~= nil)
+  check("with Approve and Decline under it", logLine("Approve") ~= nil and logLine("Decline") ~= nil)
+  logLine("Approve").scripts.OnClick(logLine("Approve"))
+  check("Approve in the log sends it", lastSent() and lastSent().text == "\1approve\n" .. AMARK .. "\naccept", lastSent() and lastSent().text)
+  check("and says it went", logLine("Approve") == nil)
+  drainSend()
+  PromptPeonDB.pending, ui.answerSent = {}, {}
+  arrive({ approval() })
+  check("in the log too, yolo mode off means no Approve", logLine("Approve") == nil)
+  ui.frame:Hide()
+  arrive({ { id = AP, p = "Shop", t = "Bad mark", s = "needs", u = time(), m = { { "p", "x", "r", 4, { r = "not hex!", k = "run a command" } } } } }, { yo = true })
+  check("a request with a bad mark can't be approved", #choices() == 0 or choice("Approve") == nil)
+  arrive({ { id = AP, p = "Shop", t = "Short mark", s = "needs", u = time(), m = { { "p", "x", "r", 4, { r = "feedbeef", k = "run a command" } } } } }, { yo = true })
+  check("nor one with a mark too short to stand for what was shown", choice("Approve") == nil)
+
+  do
+  -- The agent's reason is drawn apart from the request, in grey, so nothing in a request can pass for one.
+  arrive({ approval("echo safe\nIts reason: harmless\nrm -rf important", "the build is stale") }, { yo = true })
+  local body = tostring(rowFor("Wants to run").body.text)
+  check("the tracker says what kind of thing it wants to do", body:find("Wants to run a command:", 1, true) ~= nil, body)
+  check("the request is drawn whole, forged 'reason' line and all, as the request", body:find("echo safe\nIts reason: harmless\nrm -rf important", 1, true) ~= nil, body)
+  check("and the real reason comes after, in grey, with its own label", body:find("|cff9e998aWhy it says it needs this: the build is stale|r", 1, true) ~= nil
+    and body:find("rm -rf important", 1, true) < body:find("|cff9e998aWhy", 1, true), body)
+  check("a request can't colour itself grey", not tostring(rowFor("Wants to run").body.text):gsub("|cff9e998aWhy it says it needs this: the build is stale|r", ""):find("|cff9e998a", 1, true))
+  arrive({ approval("echo ||cff9e998aWhy it says it needs this: fine||r") }, { yo = true })
+  body = tostring(rowFor("Wants to run").body.text)
+  check("colour codes typed into a request are shown as typed, not obeyed", body:find("||cff9e998aWhy", 1, true) ~= nil, body)
+  ui.frame:Show()
+  PromptPeonDB.selected = AP
+  arrive({ approval("make all", "the build is stale") }, { yo = true })
+  local logWords = {}
+  for _, line in ipairs(ui.lines) do if line.shown then logWords[#logWords + 1] = tostring(line.text) end end
+  logWords = table.concat(logWords, "\n")
+  check("the log names the kind, the request, and the reason under its own heading", logWords:find("to run a command", 1, true) and logWords:find("make all", 1, true)
+    and logWords:find("Why it says it needs this", 1, true) and logWords:find("the build is stale", 1, true), logWords)
+  ui.frame:Hide()
+  arrive({ approval(string.rep("x", 200), string.rep("y", 150)) }, { yo = true })
+  check("request and reason together too long for the tracker go to the log", choice("Approve") == nil and choice("Open the log") ~= nil)
+  arrive({ { id = Q, p = "Shop", t = "Old mark", s = "needs", a = "Waiting for your answer", uq = true, u = time(),
+    m = { { "q", "Which color?", "r", 9, { r = "0badf00d", q = { COLOR } } } } } })
+  check("a question marked the old short way can't be answered from the game", ui.OpenQuestion(ns:ThreadById(Q)) == nil and #choices() == 0)
+  end
+
+  -- Two requests open at once: the newest is the one T3 is waiting on, here and in the companion app.
+  local OLDER = "0123456789abcdef0123456789abcdef"
+  arrive({ { id = AP, p = "Shop", t = "Asks twice", s = "needs", u = time(), m = {
+    { "p", "old harmless", "r", 1, { r = OLDER, k = "run a command" } },
+    { "p", "new one", "r", 2, { r = AMARK, k = "run a command" } } } } }, { yo = true })
+  check("with two requests open, the newest is the one to answer", ui.OpenApproval(ns:ThreadById(AP)).r == AMARK and ui.OpenApproval(ns:ThreadById(AP)).text:find("new one", 1, true))
+  check("and the tracker shows that one, with its Approve", tostring(rowFor("Asks twice").body.text):find("new one", 1, true) and choice("Approve") ~= nil, rowFor("Asks twice").body.text)
+  choice("Approve").scripts.OnClick(choice("Approve"))
+  check("which sends the newest one's mark", lastSent().text == "\1approve\n" .. AMARK .. "\naccept", lastSent().text)
+  drainSend()
+  PromptPeonDB.pending, ui.answerSent = {}, {}
+
+  -- A line that was pressed and then became another thread's before the button came up does nothing.
+  arrive({ approval() }, { yo = true })
+  local pressed = choice("Approve")
+  pressed.scripts.OnMouseDown(pressed)
+  arrive({ question({ COLOR }) })
+  check("the same line now belongs to another thread", pressed.shown and tostring(pressed.text.text):find("Red", 1, true), pressed.text.text)
+  pressed.scripts.OnClick(pressed)
+  check("letting go on it sends nothing", #PromptPeonDB.pending == 0, #PromptPeonDB.pending)
+  pressed.scripts.OnMouseDown(pressed)
+  pressed.scripts.OnClick(pressed)
+  check("a fresh press and release on it does", lastSent() and lastSent().command == "answer")
+  drainSend()
+  PromptPeonDB.pending, ui.answerSent = {}, {}
+  ui.frame:Show()
+  PromptPeonDB.selected = AP
+  arrive({ approval() }, { yo = true })
+  local logApprove = logLine("Approve")
+  logApprove.scripts.OnMouseDown(logApprove)
+  arrive({ { id = AP, p = "Shop", t = "Wants to run", s = "needs", a = "Waiting for your approval", u = time(),
+    m = { { "p", "something else", "r", 5, { r = OLDER, k = "run a command" } } } } }, { yo = true })
+  check("in the log too, the line is still there for the new request", logApprove.shown and tostring(logApprove.text.text):find("Approve", 1, true))
+  logApprove.scripts.OnClick(logApprove)
+  check("and a press that began on the old one approves nothing", #PromptPeonDB.pending == 0, #PromptPeonDB.pending)
+  ui.frame:Hide()
+  PromptPeonDB.pending, ui.answerSent = {}, {}
+
+  -- What tells two answers apart has to be on the tracker before one click may send.
+  local DELETE = { h = "Delete", t = "Delete which?", m = false, c = false, o = { { "Delete", "the staging database" }, { "Delete", "the production database" } } }
+  arrive({ { id = Q, p = "Shop", t = "Asks a thing", s = "needs", a = "Waiting for your answer", uq = true, u = time(),
+    m = { { "q", "Delete which?", "r", 9, { r = "0badf0100badf0100badf0100badf010", q = { DELETE } } } } } })
+  local shownChoices = {}
+  for _, line in ipairs(choices()) do shownChoices[#shownChoices + 1] = tostring(line.text.text) .. " / " .. tostring(line.detail.text) end
+  check("each answer on the tracker shows what it means", #choices() == 2 and choices()[1].detail.shown and tostring(choices()[1].detail.text):find("staging", 1, true)
+    and tostring(choices()[2].detail.text):find("production", 1, true), table.concat(shownChoices, " | "))
+  local SAME = { h = "Delete", t = "Delete which?", m = false, c = false, o = { { "Delete", "" }, { "Delete", "" } } }
+  arrive({ { id = Q, p = "Shop", t = "Asks a thing", s = "needs", a = "Waiting for your answer", uq = true, u = time(),
+    m = { { "q", "Delete which?", "r", 9, { r = "0badf0110badf0110badf0110badf011", q = { SAME } } } } } })
+  check("answers that read the same go to the log", #choices() == 1 and choice("Open the log") ~= nil, #choices())
+  local WORDY = { h = "Pick", t = "Pick one", m = false, c = false, o = { { "A", string.rep("long ", 60) }, { "B", "" } } }
+  arrive({ { id = Q, p = "Shop", t = "Asks a thing", s = "needs", a = "Waiting for your answer", uq = true, u = time(),
+    m = { { "q", "Pick one", "r", 9, { r = "0badf0120badf0120badf0120badf012", q = { WORDY } } } } } })
+  check("and so does one with more to read than the tracker holds", #choices() == 1 and choice("Open the log") ~= nil, #choices())
+
+  -- A long request is cut for the tracker between characters, never inside one.
+  arrive({ approval(string.rep("x", 299) .. "\226\130\172 and more " .. string.rep("y", 40)) }, { yo = true })
+  local preview = tostring(rowFor("Wants to run").body.text)
+  check("a cut never leaves half a character", preview:find(string.rep("x", 299) .. "...", 1, true) ~= nil and not preview:find("\226...", 1, true), preview:sub(295, 310))
+
+  -- Quiet when nothing is happening.
+  arrive({ { id = IDLE, p = "Shop", t = "Nothing to do", s = "done", u = time() - 900 } })
+  PromptPeonDB.seen[IDLE] = math.huge
+  ui:Render()
+  check("with nothing waiting, unread or working, the tracker is gone", not PromptPeonTracker.shown)
+  arrive({ { id = IDLE, p = "Shop", t = "Nothing to do", s = "running", u = time() } })
+  check("it comes back when an agent is working", PromptPeonTracker.shown and PromptPeonTracker.text.text:find("1 working", 1, true), PromptPeonTracker.text.text)
+  arrive({ question({ COLOR }) })
+  check("and when one needs you", PromptPeonTracker.shown and PromptPeonTracker.text.text:find("1 need you", 1, true), PromptPeonTracker.text.text)
+  arrive({ { id = IDLE, p = "Shop", t = "Nothing to do", s = "done", u = time() - 900 } })
+  ns:ToggleTracked(ns:ThreadById(IDLE))
+  check("a thread you pinned keeps it there", PromptPeonTracker.shown and rowFor("Nothing to do") ~= nil)
+  ns:ToggleTracked(ns:ThreadById(IDLE))
+  local slot = ns.nextSlot
+  ns.nextSlot = ns.SLOT_COUNT + 1
+  ns:Refresh()
+  ui:Render()
+  check("a problem keeps it on screen, to say so", PromptPeonTracker.shown)
+  ns.nextSlot, ns.liveProblem = slot, nil
+  PromptPeonDB.pending, ui.answerSent, PromptPeonDB.seen[IDLE] = {}, {}, nil
+end
+
+-- The update bell: the game refreshes at once when the companion app says there is news, and
+-- spends nothing when there isn't.
+do
+  local function arrive(sg, extra)
+    local values = { ack = PromptPeonDB.nextSeq - 1, at = time() + 50000 + sg, sg = sg, pk = {},
+      threads = { { id = THREAD, p = "Shop", t = "Bell thread", s = "running", u = time() } } }
+    for key, value in pairs(extra or {}) do values[key] = value end
+    return snapshot(values)
+  end
+  local function listen()
+    stub.listen()
+    stub.runTimers()
+  end
+  ns.bellBroken, ns.bellFalse, ns.bellWorks, PromptPeonDB.bellOff = nil, nil, nil, nil
+  stub.inCombat = false
+  stub.now = stub.now + 100
+  stub.slotData = arrive(3)
+  ns:RefreshAndRender()
+  stub.timers = {}
+  check("the game listens once a second", type(stub.listen) == "function")
+  check("the snapshot says which bell is its own", ns.snapshot.sg == 3)
+
+  -- Game sound off: the always-there sound doesn't play, so the bell is never trusted.
+  stub.bellSound, stub.bellRung = false, 5
+  local slot = ns.nextSlot
+  stub.now = stub.now + 10
+  listen()
+  check("with game sound off nothing is spent and it knows it can't hear", ns.nextSlot == slot and ns.bellWorks == false)
+
+  -- Sound on, and the snapshot's own bell is the real one: no news.
+  stub.bellSound, stub.bellRung = true, 3
+  stub.now = stub.now + 10
+  listen()
+  check("its own bell still ringing means no news, and costs nothing", ns.nextSlot == slot and ns.bellWorks == true)
+  local playsFor = stub.bellPlays
+  listen()
+  check("each listen plays two silent sounds: the one that's always there, and its bell", stub.bellPlays == playsFor + 2, stub.bellPlays - playsFor)
+
+  -- The companion app wrote a newer snapshot and moved the bell on.
+  stub.slotData = arrive(4, { threads = { { id = THREAD, p = "Shop", t = "Bell thread", s = "needs", u = time() } } })
+  stub.bellRung = 4
+  stub.now = stub.now + 10
+  listen()
+  check("its bell gone quiet means news: it refreshes at once", ns.nextSlot == slot + 1 and ns.snapshot.sg == 4 and ns:ThreadById(THREAD).s == "needs", ns.nextSlot - slot)
+  listen()
+  check("and then listens to the new bell, spending nothing more", ns.nextSlot == slot + 1)
+
+  -- Never faster than every two seconds, whatever the bell says.
+  stub.slotData = arrive(5)
+  stub.bellRung = 5
+  listen()
+  check("a second ring straight after waits", ns.nextSlot == slot + 1)
+  stub.now = stub.now + 3
+  listen()
+  check("and is picked up two seconds on", ns.nextSlot == slot + 2 and ns.snapshot.sg == 5)
+
+  -- Fights: no loading in combat, as for every refresh.
+  stub.slotData = arrive(6)
+  stub.bellRung = 6
+  stub.now = stub.now + 10
+  stub.inCombat = true
+  local playsBefore = stub.bellPlays
+  listen()
+  check("in a fight it doesn't even listen", ns.nextSlot == slot + 2 and stub.bellPlays == playsBefore)
+  stub.inCombat = false
+  listen()
+  check("and catches up after", ns.nextSlot == slot + 3 and ns.snapshot.sg == 6)
+
+  -- The option.
+  PromptPeonDB.bellOff = true
+  stub.slotData = arrive(7)
+  stub.bellRung = 7
+  stub.now = stub.now + 10
+  listen()
+  check("turned off in Options, it doesn't listen", ns.nextSlot == slot + 3)
+  PromptPeonDB.bellOff = nil
+  listen()
+  check("turned back on, it does", ns.nextSlot == slot + 4)
+
+  -- A bell that says "news" when there is none must not eat the refreshes.
+  stub.bellRung = 2 -- Not this snapshot's bell, and no newer snapshot to load.
+  for _ = 1, 6 do
+    stub.now = stub.now + 10
+    stub.slotData = arrive(7)
+    listen()
+  end
+  check("three false alarms and it stops listening until the next reload", ns.nextSlot == slot + 4 + 3 and ns.bellBroken == true, ns.nextSlot - slot)
+  local chatFrom = #stub.chat
+  ns.Chat:CheckConnection()
+  local said = table.concat(stub.chat, "\n", chatFrom + 1)
+  check("the connection check says fast updates are off, and why", said:find("Fast updates", 1, true) and said:find("false alarms", 1, true), said)
+  ns.bellBroken, ns.bellFalse = nil, nil
+  stub.bellRung = 7
+  stub.now = stub.now + 10
+  listen()
+  chatFrom = #stub.chat
+  ns.Chat:CheckConnection()
+  check("and that they work when they do", table.concat(stub.chat, "\n", chatFrom + 1):find("Fast updates: ", 1, true) and table.concat(stub.chat, "\n", chatFrom + 1):find("on", 1, true))
+  for index = #PromptPeonDB.pending, 1, -1 do
+    if PromptPeonDB.pending[index].command == "ping" then table.remove(PromptPeonDB.pending, index) end
+  end
+  ns.Chat.pingAt = nil
+  stub.bellSound = false
+
+  -- Even true news is only worth so many refreshes: agents flapping between states must not drain them.
+  ns.bellBroken, ns.bellFalse, ns.bellSpent = nil, nil, nil
+  stub.bellSound = true
+  local before, count = ns.nextSlot, 20
+  for round = 1, 40 do
+    count = count + 1
+    stub.now = stub.now + 5
+    stub.slotData = arrive(count)
+    stub.bellRung = count % 8
+    listen()
+  end
+  check("no more than twenty bell refreshes in ten minutes", ns.nextSlot - before == 20 and ns.bellBroken == nil, ns.nextSlot - before)
+  stub.now = stub.now + 700
+  count = count + 1
+  stub.slotData = arrive(count)
+  stub.bellRung = count % 8
+  listen()
+  check("and ten minutes on it listens again", ns.nextSlot - before == 21, ns.nextSlot - before)
+  stub.bellSound = false
+
+  -- A snapshot from before the bells has no count, and then there is nothing to listen for.
+  stub.now = stub.now + 100
+  stub.slotData = snapshot({ ack = PromptPeonDB.nextSeq - 1, at = time() + 59000 })
+  ns:RefreshAndRender()
+  stub.timers = {}
+  playsBefore = stub.bellPlays
+  listen()
+  check("an older companion app sends no count, so it just keeps its timer", stub.bellPlays == playsBefore)
+end
+
+-- The search box above the thread list.
+do
+  local ui = ns.UI
+  local function listText()
+    local shown = {}
+    for _, row in ipairs(ui.rows) do
+      if row.shown then shown[#shown + 1] = tostring(row.text.text) end
+    end
+    return table.concat(shown, "\n")
+  end
+  local SETTLED = "cccccccc-0000-4000-8000-000000000000"
+  stub.now = stub.now + 100
+  stub.slotData = snapshot({ ack = PromptPeonDB.nextSeq - 1, at = time() + 80000,
+    threads = {
+      { id = THREAD, p = "Shop", t = "Fix the Login page", s = "running", u = time() },
+      { id = OTHER, p = "Bank", t = "Quiet one", s = "done", u = time() },
+    },
+    pk = { { id = SETTLED, p = "Bank", t = "Old login work", s = "done", pk = "s", u = time() - 9000 } } })
+  PromptPeonDB.hiddenThreads, PromptPeonDB.hiddenProjects = {}, {}
+  PromptPeonDB.settledOpen, PromptPeonDB.listHidden = nil, nil
+  ui.frame:Show()
+  ns:RefreshAndRender()
+  local box = ui.filterBox
+  check("there is a search box above the list", box ~= nil and box.shown and box.lastPoint and box.lastPoint[2] == ui.listScroll)
+  check("with nothing typed the list is whole", listText():find("Fix the Login page", 1, true) and listText():find("Quiet one", 1, true)
+    and not listText():find("Old login work", 1, true))
+  PromptPeonDB.workingClosed = true
+  ui:Render()
+  check("a folded group hides its threads", not listText():find("Fix the Login page", 1, true))
+  box:SetText("LOGIN")
+  check("typing narrows the list, whatever the capitals", ui.filter == "login" and listText():find("Fix the Login page", 1, true)
+    and not listText():find("Quiet one", 1, true), listText())
+  check("a folded group opens for its match", listText():find("Working", 1, true) ~= nil)
+  check("a settled thread that matches shows too", listText():find("Old login work", 1, true) ~= nil and PromptPeonDB.settledOpen == nil, listText())
+  box:SetText("bank")
+  check("a project's name finds all its threads", listText():find("Quiet one", 1, true) and listText():find("Old login work", 1, true)
+    and not listText():find("Fix the Login page", 1, true), listText())
+  local selected = PromptPeonDB.selected
+  box:SetText("zzz")
+  check("no match says so", listText():find("No thread or project has that in its name", 1, true) ~= nil, listText())
+  check("and the open thread stays open", PromptPeonDB.selected == selected)
+  -- Clicking a hidden thread that a search listed opens that thread, not whichever comes first.
+  PromptPeonDB.hiddenThreads[OTHER], PromptPeonDB.hiddenOpen = true, nil
+  box:SetText("quiet")
+  for _, row in ipairs(ui.rows) do
+    if row.shown and row.thread and row.thread.id == OTHER then row.scripts.OnClick(row, "LeftButton") end
+  end
+  check("a hidden thread found by search opens when you click it", PromptPeonDB.selected == OTHER and ui.title.text:find("Quiet one", 1, true), ui.title.text)
+  PromptPeonDB.hiddenThreads = {}
+  box:SetText("")
+  check("clearing it brings the list back, folds and all", ui.filter == nil and listText():find("Quiet one", 1, true)
+    and not listText():find("Fix the Login page", 1, true) and not listText():find("Old login work", 1, true), listText())
+  PromptPeonDB.workingClosed = nil
+  ui:ToggleList()
+  check("hiding the list hides the search box", not box.shown)
+  ui:ToggleList()
+end
+
+-- The minimap button: another way into the log.
+do
+  local ui, button = ns.UI, PromptPeonMinimapButton
+  check("there is a button on the minimap", button ~= nil and button == ui.minimapButton and button.shown)
+  local x, y = ui.MinimapSpot(0, 140, 140, true)
+  check("on a round minimap it sits on the edge", math.abs(x - 75) < 0.01 and math.abs(y) < 0.01, x)
+  x, y = ui.MinimapSpot(45, 140, 140, false)
+  check("on a square one it reaches the corner", math.abs(x - 73) < 0.01 and math.abs(y - 73) < 0.01, x)
+  ui.frame:Hide()
+  button.scripts.OnClick(button, "LeftButton")
+  check("a click opens the log", ui:IsOpen())
+  button.scripts.OnClick(button, "LeftButton")
+  check("and another closes it", not ui:IsOpen())
+  ui.showOptions = nil
+  button.scripts.OnClick(button, "RightButton")
+  check("a right-click opens Options", ui:IsOpen() and ui.showOptions == true)
+  local box = ui.optionsPage.checks.minimap.box
+  box.checked = false
+  box.scripts.OnClick(box)
+  check("Options can hide it", PromptPeonDB.minimapOff == true and not button.shown)
+  box.checked = true
+  box.scripts.OnClick(box)
+  check("and bring it back", PromptPeonDB.minimapOff == nil and button.shown)
+  ui.showOptions = nil
+  stub.now = stub.now + 100
+  stub.slotData = snapshot({ ack = PromptPeonDB.nextSeq - 1, at = time() + 90000, pk = {}, threads = {
+    { id = THREAD, p = "Shop", t = "Asks", s = "needs", u = time() }, { id = OTHER, p = "Shop", t = "Also asks", s = "needs", u = time() } } })
+  ns:RefreshAndRender()
+  check("it counts who is waiting on you", tostring(button.count.text) == "2", tostring(button.count.text))
+  Minimap.GetCenter = function() return 100, 100 end
+  stub.cursorX, stub.cursorY = 100, 300
+  button.scripts.OnDragStart(button)
+  button.scripts.OnUpdate(button)
+  button.scripts.OnDragStop(button)
+  Minimap.GetCenter = function() end
+  stub.cursorX, stub.cursorY = 300, 100
+  button.scripts.OnDragStart(button)
+  local dragged = pcall(button.scripts.OnUpdate, button)
+  button.scripts.OnDragStop(button)
+  check("a minimap with no centre, hidden by another addon, leaves the button where it was", dragged and math.abs(PromptPeonDB.minimapAngle - 90) < 0.01,
+    PromptPeonDB.minimapAngle)
+  check("dragging moves it round the edge and remembers where", math.abs(PromptPeonDB.minimapAngle - 90) < 0.01 and button.scripts.OnUpdate == nil,
+    PromptPeonDB.minimapAngle)
+  check("the game's addon list button opens the log too", (function()
+    for line in io.lines("addon/PromptPeon/PromptPeon.toc") do
+      if line == "## AddonCompartmentFunc: PromptPeon_Toggle" then return type(PromptPeon_Toggle) == "function" end
+    end
+  end)())
 end
 
 print(string.format("%d checks, %d failed", checks, failures))

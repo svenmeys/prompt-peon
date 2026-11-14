@@ -86,6 +86,10 @@ report(isinstance(catalog.model_catalog(config), list), "the model list still pa
 
 for kind, extra in COMMANDS.items():
     understood("orchestration.dispatchCommand", kind, {"type": kind, "commandId": str(uuid.uuid4()), "threadId": NOBODY, **extra})
+# Yolo mode's Approve and Decline: the same command as an answer, with a decision in place of answers.
+for decision in ("accept", "decline"):
+    understood("orchestration.dispatchCommand", f"runtime-request.respond {decision}", {
+        "type": "runtime-request.respond", "commandId": str(uuid.uuid4()), "threadId": NOBODY, "requestId": "request:nobody", "decision": decision})
 understood("orchestration.dispatchCommand", "message.dispatch", {
     "type": "message.dispatch", "commandId": str(uuid.uuid4()), "threadId": NOBODY, "messageId": str(uuid.uuid4()),
     "text": "x", "attachments": [], "dispatchMode": {"type": "queue_after_active"}, "createdBy": "user", "creationSource": "web"})

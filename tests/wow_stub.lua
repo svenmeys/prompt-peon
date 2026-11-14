@@ -32,6 +32,13 @@ local function makeFrame(kind)
   frame.SetHyperlinksEnabled = function(self, on) self.hyperlinks = on end
   frame.SetPoint = function(self, ...) self.lastPoint = { ... } end
   frame.SetChecked = function(self, on) self.checked = on end
+  -- Like the real one: it takes the picture and nothing else, so a blend mode has to be set on what it made.
+  frame.SetCheckedTexture = function(self, texture)
+    self.checkedTexture = makeFrame("Texture")
+    self.checkedTexture.texture = texture
+  end
+  frame.GetCheckedTexture = function(self) return self.checkedTexture end
+  frame.SetBlendMode = function(self, mode) self.blendMode = mode end
   frame.SetClampRectInsets = function(self, ...) self.clampInsets = { ... } end
   frame.GetChecked = function(self) return self.checked end
   frame.SetDesaturated = function(self, on) self.desaturated = on end
@@ -120,7 +127,26 @@ function M.install()
   GetCursorPosition = function() return M.cursorX, M.cursorY end
   IsMouseButtonDown = function() return M.mouseDown end
   PlaySound = function(sound) M.sounds = M.sounds + 1; M.played[#M.played + 1] = sound end
-  PlaySoundFile = function(file) M.sounds = M.sounds + 1; M.played[#M.played + 1] = file end
+  -- The update bells are sound files too, but silent ones the addon plays to ask a question. They
+  -- have handles, and whether one "plays" is up to the test: is game sound on, and which bell is real.
+  M.bellHandles, M.bellSound, M.bellRung, M.bellPlays = {}, false, nil, 0
+  PlaySoundFile = function(file)
+    if tostring(file):find("\\bells\\", 1, true) then
+      M.bellPlays = M.bellPlays + 1
+      M.bellHandles[#M.bellHandles + 1] = file
+      return true, #M.bellHandles
+    end
+    M.sounds = M.sounds + 1
+    M.played[#M.played + 1] = file
+  end
+  StopSound = function() end
+  C_Sound = { IsPlaying = function(handle)
+    local file = M.bellHandles[handle] or ""
+    if not M.bellSound then return false end
+    if file:find("on.wav", 1, true) then return true end
+    local number = tonumber(file:match("b(%d)%.wav"))
+    return number ~= nil and M.bellRung == number - 1
+  end }
   PlayerFrame = makeFrame("Frame")
   RaidBossEmoteFrame = makeFrame("Frame")
   ChatTypeInfo = { RAID_BOSS_EMOTE = { r = 1, g = 1, b = 0 } }
@@ -147,7 +173,8 @@ function M.install()
   end
   EventRegistry = { RegisterCallback = function(_, name, fn) M.linkHandler = fn end }
   C_Timer = {
-    NewTicker = function(_, fn) M.tick = fn end,
+    -- The addon has two: the five-second one that paces refreshes, and the one that listens for the bell.
+    NewTicker = function(seconds, fn) if seconds == 5 then M.tick = fn else M.listen = fn end end,
     After = function(_, fn) M.timers[#M.timers + 1] = fn end,
   }
   C_AddOns = {

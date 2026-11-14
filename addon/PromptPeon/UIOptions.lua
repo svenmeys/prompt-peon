@@ -66,6 +66,7 @@ function UI:BuildOptionsPage()
   heading("Show")
   check("list", "Thread list", "the threads on the left", function() return not ns.db.listHidden end, function() UI:ToggleList() end)
   check("tracker", "Quest tracker", "your tracked threads on screen", function() return not ns.db.trackerOff end, function(on) ns.db.trackerOff = not on or nil end)
+  check("minimap", "Minimap button", "opens the log", function() return not ns.db.minimapOff end, function(on) ns.db.minimapOff = not on or nil end)
   check("party", "Party frames", "agents as party members", function() return ns.db.partyOn == true end, function(on) ns.db.partyOn = on end)
   check("elite", "Elite frames", "silver and gold dragons for veterans", function() return ns.db.eliteFrames == true end, function(on) ns.db.eliteFrames = on or nil end)
   check("askSpells", "Ask before spells", "shows the words first", function() return not ns.db.spellsNoAsk end, function(on) ns.db.spellsNoAsk = not on or nil end)
@@ -96,8 +97,9 @@ function UI:BuildOptionsPage()
     local seconds = math.floor(value + 0.5)
     return seconds .. " s, reload " .. ns.AboutTime(seconds * ns.SLOT_COUNT) .. " apart"
   end)
+  check("bell", "Fast updates", "hears the companion app, needs game sound on", function() return not ns.db.bellOff end, function(on) ns.db.bellOff = not on or nil end)
   heading("You")
-  button("openStatus", "Show status in chat", function() ns.Chat:Status() end)
+  button("checkConnection", "Check the connection", function() ns.Chat:CheckConnection() end)
   page.height = y
   self.optionsPage = page
 end

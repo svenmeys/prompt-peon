@@ -149,8 +149,20 @@ def is_relayed(url: str) -> bool:
     return host == settings.RELAY_DOMAIN or host.endswith("." + settings.RELAY_DOMAIN)
 
 
+def use_renewed_tokens(remote, names: list[str]) -> None:
+    """A renewed token is on disk. Hand it to the connection that's already in use, and only if that
+    connection is to this machine's T3: this token must never go to another address."""
+    pairs = remote.servers if isinstance(remote, ServerSet) else [("main", remote)]
+    for name, server in pairs:
+        if name in names and server.url.rstrip("/") == settings.DEFAULT_URL.rstrip("/"):
+            server.token = userconfig.read_token() if name == "main" else userconfig.read_extra_token(name)
+
+
 def from_config(config: dict):
     """The T3 the installer set up, plus any others it added. One server stays a plain T3Remote."""
+    # "main" is the first one's name, and what its token file and its renewal go by.
+    if any(entry.get("name") == "main" for entry in config.get("also") or []):
+        raise ValueError("an extra T3 can't be called main")
     main = t3remote.T3Remote(config["url"], userconfig.read_token())
     extra = [(entry["name"], t3remote.T3Remote(entry["url"], userconfig.read_extra_token(entry["name"])))
              for entry in config.get("also") or [] if entry.get("name") and entry.get("url")]
