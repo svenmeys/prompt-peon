@@ -30,7 +30,9 @@ function UI:Render()
   self.problem:SetText(problem or "")
   self.problem:SetShown(problem ~= nil)
   self.top:ClearAllPoints()
-  self.top:SetPoint("TOPLEFT", self.frame, "TOPLEFT", 0, problem and -54 or -28)
+  local headerBase = (UI.HEADER_HEIGHT or 30) + 4
+  local problemDrop = problem and (math.max(22, math.ceil(self.problem:GetStringHeight() or 22)) + 6) or 0
+  self.top:SetPoint("TOPLEFT", self.frame, "TOPLEFT", 0, -(headerBase + problemDrop))
 
   local threads = ns.snapshot and ns.snapshot.threads or {}
   local thread = selectedThread(threads)

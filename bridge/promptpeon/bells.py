@@ -93,6 +93,17 @@ def ring(folder: Path, count: int) -> bool:
         return False
 
 
+def _loaded_key(thread_id: str, field: str, value) -> tuple:
+    """Identify what arrived so loading page 2, another PR, or more history still rings the bell."""
+    if field == "fp" and isinstance(value, list) and len(value) >= 2:
+        return (thread_id, field, str(value[0]), value[1])
+    if field == "pd" and isinstance(value, list) and value:
+        return (thread_id, field, value[0])
+    if field in ("oc", "dp"):
+        return (thread_id, field, value)
+    return (thread_id, field)
+
+
 def shape(snapshot: dict) -> tuple[str, frozenset]:
     """What is worth telling the game about at once, in two parts. The first is every thread's
     state, in an order that doesn't depend on who wrote last: two agents taking turns being newest
@@ -102,7 +113,8 @@ def shape(snapshot: dict) -> tuple[str, frozenset]:
     rows = (snapshot.get("threads") or []) + (snapshot.get("pk") or [])
     state = json.dumps([sorted((of(row) for row in rows), key=json.dumps),
                         bool(snapshot.get("err")), bool(snapshot.get("lk")), bool(snapshot.get("yo")), bool(snapshot.get("quiet"))])
-    asked = frozenset((str(row.get("id")), field) for row in rows for field in settings.LOADED_FIELDS if field in row)
+    asked = frozenset(_loaded_key(str(row.get("id")), field, row[field])
+                      for row in rows for field in settings.LOADED_FIELDS if field in row)
     return state, asked
 
 

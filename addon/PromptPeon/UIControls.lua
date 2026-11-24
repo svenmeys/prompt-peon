@@ -123,9 +123,9 @@ function UI:StartReply()
   end)
 end
 
-UI.sideTabTop = -36 -- Just under the title bar, where the spellbook starts its tabs.
-UI.sideTabPitch = 49 -- The spellbook's: its tab art is 56 tall, so closer and the plates overlap.
-UI.sideTabGap = 8 -- Between the pages and the open thread's own tabs.
+UI.sideTabTop = -38 -- Just under the header bar.
+UI.sideTabPitch = 38 -- Tight, crisp vertical dock spacing.
+UI.sideTabGap = 12 -- Visual separation between global pages and open-thread tabs.
 
 --- Stacks the shown tabs down the right edge, so a missing one leaves no hole: the pages first, then,
 --- after a gap, the open thread's. UIFrame.lua's MIN_HEIGHT is what all six need.
@@ -138,7 +138,7 @@ function UI:PlaceSideTabs()
         if y ~= UI.sideTabTop then y = y - UI.sideTabGap end
       end
       tab:ClearAllPoints()
-      tab:SetPoint("TOPLEFT", self.frame, "TOPRIGHT", 0, y)
+      tab:SetPoint("TOPLEFT", self.frame, "TOPRIGHT", -1, y)
       y = y - UI.sideTabPitch
     end
   end

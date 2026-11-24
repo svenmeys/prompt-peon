@@ -20,32 +20,31 @@ function UI:NoteKeyboard(what)
 end
 
 function UI:BuildReply(frame)
-  local holder = CreateFrame("Frame", nil, frame, "BackdropTemplate")
+  local THEME = UI.THEME
+  local holder = CreateFrame("Frame", nil, frame)
   holder:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", UI.ListWidth() + PAD + 14, 40)
   holder:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -PAD - 6, 40)
   holder:SetHeight(64)
-  holder:SetBackdrop({
-    bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
-    edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-    edgeSize = 12,
-    insets = { left = 3, right = 3, top = 3, bottom = 3 },
-  })
-  holder:SetBackdropColor(0, 0, 0, 0.55)
-  holder:SetBackdropBorderColor(0.6, 0.6, 0.6, 1)
+  UI.SkinSurface(holder, THEME.input, THEME.border)
 
   local scroll = CreateFrame("ScrollFrame", "PromptPeonReplyScroll", holder, "UIPanelScrollFrameTemplate")
   scroll:SetPoint("TOPLEFT", 8, -7)
-  scroll:SetPoint("BOTTOMRIGHT", -26, 7)
+  scroll:SetPoint("BOTTOMRIGHT", -24, 7)
   hideScrollBarWhenIdle(scroll)
 
   local box = CreateFrame("EditBox", nil, scroll)
   box:SetMultiLine(true)
   box:SetAutoFocus(false)
   box:SetFontObject("PromptPeonBody")
+  box:SetTextColor(THEME.text[1], THEME.text[2], THEME.text[3])
   box:SetMaxLetters(ns.MAX_REPLY_BYTES)
   box:SetWidth(200)
+  box:SetHeight(48)
   scroll:SetScrollChild(box)
-  scroll:SetScript("OnSizeChanged", function(_, width) box:SetWidth(math.max(width, 50)) end)
+  scroll:SetScript("OnSizeChanged", function(_, width, height)
+    box:SetWidth(math.max(width or 50, 50))
+    if height and height > 0 and (box:GetHeight() or 0) < height then box:SetHeight(height) end
+  end)
   --- A click on the box always gets the keyboard, even from whatever was holding it.
   local function takeKeyboard()
     local holding = GetCurrentKeyBoardFocus and GetCurrentKeyBoardFocus()
@@ -62,6 +61,7 @@ function UI:BuildReply(frame)
   hint:SetPoint("RIGHT", -26, 0)
   hint:SetJustifyH("LEFT")
   hint:SetWordWrap(false)
+  hint:SetTextColor(THEME.textMuted[1], THEME.textMuted[2], THEME.textMuted[3])
   self.hint = hint
   -- Says how the box works for as long as it's empty, including while you're about to type.
   local keys = holder:CreateFontString(nil, "OVERLAY", "PromptPeonHint")
@@ -69,11 +69,13 @@ function UI:BuildReply(frame)
   keys:SetPoint("RIGHT", -26, 0)
   keys:SetJustifyH("LEFT")
   keys:SetWordWrap(false)
+  keys:SetTextColor(THEME.textMuted[1], THEME.textMuted[2], THEME.textMuted[3])
   keys:SetText("Enter to send. Shift+Enter for a new line.")
   self.hintKeys = keys
   local function updateHint()
     hint:SetShown(box:GetText() == "")
     keys:SetShown(box:GetText() == "")
+    if scroll.UpdateScrollChildRect then scroll:UpdateScrollChildRect() end
   end
 
   box:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
@@ -81,13 +83,18 @@ function UI:BuildReply(frame)
   box:SetScript("OnEnterPressed", function(self)
     if IsShiftKeyDown() then self:Insert("\n") else UI:Send() end
   end)
-  box:SetScript("OnEditFocusGained", updateHint)
+  box:SetScript("OnEditFocusGained", function()
+    UI.SetBorderColor(holder, THEME.borderAccent[1], THEME.borderAccent[2], THEME.borderAccent[3], THEME.borderAccent[4])
+    updateHint()
+  end)
   box:SetScript("OnEditFocusLost", function()
+    UI.SetBorderColor(holder, THEME.border[1], THEME.border[2], THEME.border[3], THEME.border[4])
     updateHint()
     UI:NoteKeyboard("lost it")
   end)
   box:SetScript("OnTextChanged", updateHint)
   box:SetScript("OnCursorChanged", function(_, _, y, _, height)
+    if scroll.UpdateScrollChildRect then scroll:UpdateScrollChildRect() end
     local top, view = scroll:GetVerticalScroll(), scroll:GetHeight()
     if -y < top then
       scroll:SetVerticalScroll(-y)
@@ -108,17 +115,15 @@ function UI:BuildReply(frame)
 end
 
 function UI:BuildFooter(frame)
-  local send = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-  send:SetSize(90, 24)
-  send:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -PAD - 12, 10)
-  send:SetText("Send")
+  local send = UI.FlatButton(frame, 90, 22, "Send", true)
+  send:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -PAD - 10, 8)
   send:SetScript("OnClick", function() UI:Send() end)
   self.send = send
 
   local reloadHint = CreateFrame("Button", nil, frame)
-  reloadHint:SetSize(76, 16)
+  reloadHint:SetSize(76, 18)
   reloadHint:SetPoint("RIGHT", send, "LEFT", -6, 0)
-  reloadHint.text = reloadHint:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  reloadHint.text = reloadHint:CreateFontString(nil, "OVERLAY", "PromptPeonSmall")
   reloadHint.text:SetAllPoints()
   reloadHint.text:SetJustifyH("RIGHT")
   reloadHint:SetScript("OnEnter", function(self) UI:ShowReloadTip(self) end)
@@ -129,15 +134,12 @@ function UI:BuildFooter(frame)
   notice:SetPoint("RIGHT", send, "LEFT", -8, 0)
   notice:SetJustifyH("LEFT")
   notice:SetWordWrap(false)
+  notice:SetTextColor(UI.THEME.textDim[1], UI.THEME.textDim[2], UI.THEME.textDim[3])
   self.notice = notice
 
   -- Only shown when the one thing that needs a loading screen is actually needed.
-  local reload = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-  reload:SetSize(76, 20)
+  local reload = UI.FlatButton(frame, 76, 20, "Reload UI")
   reload:SetPoint("RIGHT", send, "LEFT", -6, 0)
-  reload:SetNormalFontObject("GameFontNormalSmall")
-  reload:SetHighlightFontObject("GameFontHighlightSmall")
-  reload:SetText("Reload UI")
   reload:SetScript("OnClick", function()
     if InCombatLockdown() then
       UI:SetNotice("You're in combat. Reload after the fight.")
@@ -213,7 +215,9 @@ end
 --- The model starts as this project's latest, then the open thread's, because that's usually right.
 function UI:StartNewThread(project)
   local open = ns:ThreadById(ns.db.selected)
-  project = project or (open and open.p)
+  local projects = ns.snapshot and ns.snapshot.pj or {}
+  project = project or (open and open.p) or projects[1]
+  if not project then return end
   local instance, model, effort = open and open.mi, open and open.mo, open and open.ef
   for _, row in ipairs(ns.snapshot and ns.snapshot.pm or {}) do
     if row[1] == project then
@@ -222,6 +226,7 @@ function UI:StartNewThread(project)
   end
   self:SaveDraft()
   self.editingQueued, self.showReport, self.showAchievements, self.showOptions = nil, nil, nil, nil
+  self.shownKey = nil
   self.newThread = { project = project, instance = instance, model = model, effort = effort, selected = ns.db.selected }
   self.input.EditBox:SetText(self.newThreadWords or "")
   self.input.EditBox:SetFocus()

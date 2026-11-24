@@ -22,17 +22,25 @@ function UI:QueueButton(index)
   local button = self.queueButtons[index]
   if button then return button end
   button = CreateFrame("Button", nil, self.detailContent)
-  button:SetSize(16, 16)
+  button:SetSize(18, 18)
+  UI.SkinSurface(button, UI.THEME.panel, UI.THEME.border)
   button.icon = button:CreateTexture(nil, "ARTWORK")
-  button.icon:SetAllPoints()
-  button:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
+  button.icon:SetSize(12, 12)
+  button.icon:SetPoint("CENTER")
+  button.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
   button:SetScript("OnEnter", function(self)
+    UI.SetFillColor(self, UI.THEME.panelHover[1], UI.THEME.panelHover[2], UI.THEME.panelHover[3], UI.THEME.panelHover[4])
+    UI.SetBorderColor(self, UI.THEME.borderAccent[1], UI.THEME.borderAccent[2], UI.THEME.borderAccent[3], UI.THEME.borderAccent[4])
     GameTooltip:SetOwner(self, "ANCHOR_TOP")
-    GameTooltip:AddLine(self.label, 1, 0.82, 0)
+    GameTooltip:AddLine(self.label, UI.THEME.accent[1], UI.THEME.accent[2], UI.THEME.accent[3])
     GameTooltip:AddLine(self.detail, 1, 1, 1, true)
     GameTooltip:Show()
   end)
-  button:SetScript("OnLeave", function() GameTooltip:Hide() end)
+  button:SetScript("OnLeave", function(self)
+    UI.SetFillColor(self, UI.THEME.panel[1], UI.THEME.panel[2], UI.THEME.panel[3], UI.THEME.panel[4])
+    UI.SetBorderColor(self, UI.THEME.border[1], UI.THEME.border[2], UI.THEME.border[3], UI.THEME.border[4])
+    GameTooltip:Hide()
+  end)
   button:SetScript("OnClick", function(self) self.action() end)
   self.queueButtons[index] = button
   return button
@@ -192,19 +200,29 @@ function UI:RenderDetail(thread)
     self.meta:SetText("")
     self.empty:SetText(ns.snapshot and not ns.snapshot.quiet and "No open threads. " .. ns:Workers().idle or "Waiting for the companion app.")
     self.empty:Show()
-    self.shownThread = nil
+    self.shownThread, self.shownKey, self.olderShown = nil, nil, nil
     return
   end
   self.empty:Hide()
-  self:AskForParked(thread)
+
+  -- Determine active page/view first so thread-specific warnings and parked fetches never bleed onto other pages.
+  local newPage = self.newThread
+  local options = not newPage and self.showOptions
+  local achievements = not newPage and not options and self.showAchievements and ns.Game
+  local report = not newPage and not options and not achievements and self.showReport and ns.Game and ns.Game.report or nil
+  local page = newPage or options or achievements or report
+  local view = newPage and "new" or options and "options" or achievements and "achievements" or report and "report" or self.views[thread.id]
+  local kept = ns.loaded[thread.id] or {}
+
+  if not page then self:AskForParked(thread) end
 
   local info = STATUS[thread.s] or STATUS.idle
   self.title:SetText(ns.Plain(thread.t))
-  local meta = colored(info, info.label) .. "  |cff888888" .. ns.Plain(thread.p)
+  local meta = colored(info, info.label) .. "  |cff7c828d" .. ns.Plain(thread.p)
   if thread.pk == "z" then
-    meta = "|cff9fb8d6Snoozed until " .. UI.WakeWords(thread.zu) .. "|r  |cff888888" .. ns.Plain(thread.p)
+    meta = "|cff9fb8d6Snoozed until " .. UI.WakeWords(thread.zu) .. "|r  |cff7c828d" .. ns.Plain(thread.p)
   elseif thread.pk and thread.pk ~= "l" then
-    meta = "|cff888888Settled  " .. ns.Plain(thread.p)
+    meta = "|cff7c828dSettled  " .. ns.Plain(thread.p)
   end
   if thread.b and thread.b ~= "" then meta = meta .. " / " .. ns.Plain(thread.b) end
   if thread.mo and thread.mo ~= "" then
@@ -215,36 +233,51 @@ function UI:RenderDetail(thread)
   self.meta:SetText(meta .. "|r")
 
   local canvas = self:NewCanvas(width)
-  local add, addChunks, drawMarkdown, foldingHead = canvas.add, canvas.addChunks, canvas.drawMarkdown, canvas.foldingHead
+  local add, addChunks, bar, drawMarkdown, foldingHead = canvas.add, canvas.addChunks, canvas.bar, canvas.drawMarkdown, canvas.foldingHead
   local queueButtons = 0
+  local headHeight = UI.HeadHeight()
   -- One clickable line, the way a quest offers its rewards: an answer to pick, or Approve and Decline.
   -- `what` names the thing a click does. A line is reused as the thread redraws, and a press that
   -- began on one thing must not land on another.
   local function choiceLine(words, picked, onClick, what)
     canvas.heads = canvas.heads + 1
     local head = self:GroupHead(canvas.heads)
-    head.key, head.open = "answer:" .. (what or canvas.heads), false
+    head.key, head.open, head.foldable = "answer:" .. (what or canvas.heads), false, false
     showFold(head, nil)
     head:ClearAllPoints()
     head:SetPoint("TOPLEFT", self.detailContent, "TOPLEFT", 8, -canvas.y)
-    head:SetSize(width - 12, 16)
-    head.text:SetText((picked and "|cffffd100" or "|cffe0ddd0") .. words .. "|r")
+    head:SetSize(width - 14, headHeight)
+    head.text:SetText((picked and "|cfff0c461" or "|cffe6e4dc") .. words .. "|r")
     head.onClick = onClick
     head:Show()
-    canvas.y = canvas.y + 18
+    canvas.y = canvas.y + headHeight + 2
   end
 
-  if thread.s == "needs" then
-    add(thread.nb and "This agent asked you something. Your reply here answers it."
-      or thread.uq and UI.OpenQuestion(thread) and "This agent is asking you something. Pick your answer below."
-      or thread.uq and "This agent is asking you something. Answer it in T3. A reply here only queues a message."
-      or UI.OpenApproval(thread) and "This agent is waiting for your approval. Read what it asks, then Approve or Decline below."
-      or "This agent is waiting for your approval. Answer it in T3. A reply here only queues a message.", 1.0, 0.66, 0.26)
-    canvas.y = canvas.y + 6
-  end
-  if thread.e then
-    addChunks(thread.e, 0.90, 0.36, 0.30)
-    canvas.y = canvas.y + 6
+  if not view and not page then
+    if thread.s == "needs" then
+      local top = canvas.y
+      canvas.y = canvas.y + 4
+      add(thread.nb and "This agent asked you something. Your reply here answers it."
+        or thread.uq and UI.OpenQuestion(thread) and "This agent is asking you something. Pick your answer below."
+        or thread.uq and "This agent is asking you something. Answer it in T3. A reply here only queues a message."
+        or UI.OpenApproval(thread) and "This agent is waiting for your approval. Read what it asks, then Approve or Decline below."
+        or "This agent is waiting for your approval. Answer it in T3. A reply here only queues a message.", 1.0, 0.67, 0.28, "PromptPeonSmall", 10, width - 18)
+      canvas.y = canvas.y + 2
+      bar(0, top, width - 4, canvas.y - top, 0.26, 0.16, 0.06, 0.55)
+      bar(0, top, 2, canvas.y - top, 1.0, 0.67, 0.28, 0.95)
+      canvas.y = canvas.y + 6
+    end
+    if thread.e then
+      local top = canvas.y
+      canvas.y = canvas.y + 4
+      for _, chunk in ipairs(ns.Chunks(thread.e)) do
+        add(ns.Plain(chunk), 0.96, 0.50, 0.48, "PromptPeonSmall", 10, width - 18)
+      end
+      canvas.y = canvas.y + 2
+      bar(0, top, width - 4, canvas.y - top, 0.28, 0.09, 0.09, 0.60)
+      bar(0, top, 2, canvas.y - top, 0.94, 0.38, 0.36, 0.95)
+      canvas.y = canvas.y + 6
+    end
   end
 
   local function drawWork(row)
@@ -252,15 +285,19 @@ function UI:RenderDetail(thread)
     if kind == "t" then
       local chunks = ns.Chunks(text)
       for number, chunk in ipairs(chunks) do
-        add((number == 1 and "Thinking: " or "") .. ns.Markdown.Inline(chunk), 0.60, 0.66, 0.78, "PromptPeonSmall")
+        add((number == 1 and "Thinking: " or "") .. ns.Markdown.Inline(chunk), 0.58, 0.67, 0.80, "PromptPeonSmall", 12, width - 18)
       end
     elseif kind == "s" then
       local style = STEP_MARK[state] or STEP_MARK.d
-      add(style.mark .. " " .. ns.Plain(text), style.r, style.g, style.b, "PromptPeonSmall")
+      add(style.mark .. " " .. ns.Plain(text), style.r, style.g, style.b, "PromptPeonSmall", 12, width - 18)
     elseif kind == "d" then
-      addChunks(text, 0.80, 0.78, 0.60, "PromptPeonSmall")
+      for _, chunk in ipairs(ns.Chunks(text)) do
+        add(ns.Plain(chunk), 0.82, 0.80, 0.64, "PromptPeonSmall", 12, width - 18)
+      end
     else
-      addChunks(text, 0.55, 0.53, 0.48, "PromptPeonSmall")
+      for _, chunk in ipairs(ns.Chunks(text)) do
+        add(ns.Plain(chunk), 0.55, 0.58, 0.64, "PromptPeonSmall", 12, width - 18)
+      end
     end
   end
 
@@ -268,7 +305,7 @@ function UI:RenderDetail(thread)
   local function drawPicture(row)
     local label, file, pictureWidth, pictureHeight, note = row[2], row[5], row[6], row[7], row[8]
     if not file or file == 0 then
-      add(ns.Plain(label) .. (note and note ~= "" and ("  |cff888888" .. ns.Plain(note) .. "|r") or ""), 0.62, 0.60, 0.54, "PromptPeonSmall")
+      add(ns.Plain(label) .. (note and note ~= "" and ("  |cff7c828d" .. ns.Plain(note) .. "|r") or ""), 0.62, 0.64, 0.68, "PromptPeonSmall")
       canvas.y = canvas.y + 4
       return
     end
@@ -284,29 +321,22 @@ function UI:RenderDetail(thread)
     pic.pictureWidth, pic.pictureHeight, pic.label = pictureWidth, pictureHeight, label
     pic:Show()
     canvas.y = canvas.y + pictureHeight * scale + 3
-    add(ns.Plain(label), 0.62, 0.60, 0.54, "PromptPeonSmall")
+    add(ns.Plain(label), 0.62, 0.64, 0.68, "PromptPeonSmall")
     canvas.y = canvas.y + 5
   end
 
-  local newPage = self.newThread
-  local options = not newPage and self.showOptions
-  local achievements = not newPage and not options and self.showAchievements and ns.Game
-  local report = not newPage and not options and not achievements and self.showReport and ns.Game and ns.Game.report or nil
-  local page = newPage or options or achievements or report
-  local view = newPage and "new" or options and "options" or achievements and "achievements" or report and "report" or self.views[thread.id]
-  local kept = ns.loaded[thread.id] or {}
   if options then
     self.title:SetText("Options")
-    self.meta:SetText("")
+    self.meta:SetText("|cff7c828dPreferences & connection|r")
   elseif newPage then
     self.title:SetText("New thread")
-    self.meta:SetText("")
+    self.meta:SetText("|cff7c828dStart an agent run|r")
   elseif achievements then
     self.title:SetText("Achievements")
-    self.meta:SetText("|cff888888" .. ns.Game.EarnedWords() .. "|r")
+    self.meta:SetText("|cff7c828d" .. ns.Game.EarnedWords() .. "|r")
   elseif report then
     self.title:SetText(report.title)
-    self.meta:SetText("")
+    self.meta:SetText("|cff7c828dAway report|r")
   elseif ns.Game then
     ns.Game:MarkSeen(thread)
   end
@@ -328,9 +358,9 @@ function UI:RenderDetail(thread)
     "Pull requests (" .. pulls .. ")", pulls, UI.PullRequestSummary(thread.prs or {}))
   viewTab(self.agents, "agents", thread.ag ~= nil or threadView == "agents",
     "Agents (" .. sent .. ")", sent, "Who it sent out, and what they came back with.")
-  self:PlaceHeaderButtons()
   if options then
     if not self.optionsPage then self:BuildOptionsPage() end
+    self.optionsPage:SetWidth(math.max(width - 4, 240))
     self.optionsPage:Show()
     self:SyncOptions()
     canvas.y = self.optionsPage.height
@@ -398,14 +428,14 @@ function UI:RenderDetail(thread)
       if failed > 0 then label = label .. ", |cffe65c4d" .. failed .. " failed|r" end
       canvas.heads = canvas.heads + 1
       local head = self:GroupHead(canvas.heads)
-      head.key, head.open = key, isOpen
+      head.key, head.open, head.foldable = key, isOpen, true
       showFold(head, isOpen)
       head:ClearAllPoints()
       head:SetPoint("TOPLEFT", self.detailContent, "TOPLEFT", 0, -canvas.y)
-      head:SetSize(width - 4, 14)
-      head.text:SetText("|cff8c8a80" .. label .. "|r")
+      head:SetSize(width - 4, headHeight)
+      head.text:SetText("|cff848d9e" .. label .. "|r")
       head:Show()
-      canvas.y = canvas.y + 17
+      canvas.y = canvas.y + headHeight + 3
       for number = first, position - 1 do
         if isOpen or (going and rows[number][1] ~= "t") then drawWork(rows[number]) end
       end
@@ -416,18 +446,17 @@ function UI:RenderDetail(thread)
       canvas.heads = canvas.heads + 1
       local head = self:GroupHead(canvas.heads)
       local key = thread.id .. ":agent:" .. tostring(row[4] or position)
-      local isOpen = self.groups[key]
-      if isOpen == nil then isOpen = false end
+      local isOpen = self.groups[key] == true
       local style = STEP_MARK[row[3] or "d"] or STEP_MARK.d
       local words = row[3] == "r" and "working" or row[3] == "f" and "failed" or row[3] == "c" and "stopped" or "done"
-      head.key, head.open = key, isOpen
+      head.key, head.open, head.foldable = key, isOpen, true
       if row[5] and row[5] ~= "" then showFold(head, isOpen) else showFold(head, nil) end
       head:ClearAllPoints()
       head:SetPoint("TOPLEFT", self.detailContent, "TOPLEFT", 0, -canvas.y)
-      head:SetSize(width - 4, 14)
+      head:SetSize(width - 4, headHeight)
       head.text:SetText(string.format("|cff%02x%02x%02xAgent: %s (%s)|r", style.r * 255, style.g * 255, style.b * 255, ns.Plain(row[2]), words))
       head:Show()
-      canvas.y = canvas.y + 17
+      canvas.y = canvas.y + headHeight + 3
       if isOpen and row[5] then drawMarkdown(row[5], key) end
       canvas.y = canvas.y + 4
       lastRole = nil
@@ -583,25 +612,40 @@ function UI:RenderDetail(thread)
 
   self.detailContent:SetHeight(math.max(canvas.y, 10))
 
-  -- Jump to the newest message on a new thread, or when already at the bottom.
-  -- If you scrolled up to read, a new message leaves you where you are.
   local scroll = self.detailScroll
-  local wasAtBottom = scroll:GetVerticalScroll() >= scroll:GetVerticalScrollRange() - 30
-  if not view and olderRows and self.olderShown ~= #olderRows then
+  if scroll.UpdateScrollChildRect then scroll:UpdateScrollChildRect() end
+  local viewKey = (page and ("page:" .. view)) or (thread.id .. ":" .. (view or "messages"))
+  local threadChanged = self.shownThread ~= thread.id
+  local viewChanged = self.shownKey ~= viewKey
+  if threadChanged then self.olderShown = nil end
+
+  -- Jump to the newest message on a new thread, or when already at the bottom.
+  -- Pages and tabs always start cleanly at the top instead of inheriting the thread's scroll offset.
+  local currentScroll = scroll:GetVerticalScroll() or 0
+  local currentRange = scroll:GetVerticalScrollRange() or 0
+  local wasAtBottom = currentScroll >= currentRange - 30
+  if not view and not page and olderRows and self.olderShown ~= #olderRows then
     -- Older messages arrived above what you were reading. Keep your eyes on the same line.
-    local grew = self.shownThread == thread.id and canvas.y - (self.shownHeight or canvas.y) or 0
+    local grew = (not threadChanged) and canvas.y - (self.shownHeight or canvas.y) or 0
     self.olderShown = #olderRows
     if grew > 0 then
-      local from = scroll:GetVerticalScroll()
+      local from = currentScroll
       C_Timer.After(0, function() scroll:SetVerticalScroll(from + grew) end)
+    elseif threadChanged then
+      C_Timer.After(0, function() scroll:SetVerticalScroll(scroll:GetVerticalScrollRange()) end)
     end
-  elseif view then
-    -- These read from the top, and keep your place while they fill in.
-    if self.shownThread ~= thread.id then scroll:SetVerticalScroll(0) end
-  elseif self.shownThread ~= thread.id or (self.shownHeight ~= canvas.y and wasAtBottom) then
+  elseif view or page then
+    if viewChanged then
+      scroll:SetVerticalScroll(0)
+    elseif currentScroll > currentRange then
+      scroll:SetVerticalScroll(currentRange)
+    end
+  elseif viewChanged or (self.shownHeight ~= canvas.y and wasAtBottom) then
     C_Timer.After(0, function() scroll:SetVerticalScroll(scroll:GetVerticalScrollRange()) end)
+  elseif currentScroll > currentRange then
+    scroll:SetVerticalScroll(currentRange)
   end
-  self.shownThread, self.shownHeight = thread.id, canvas.y
+  self.shownThread, self.shownKey, self.shownHeight = thread.id, viewKey, canvas.y
   self.activityThread = thread
   self:DrawActivity()
 end

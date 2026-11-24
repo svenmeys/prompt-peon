@@ -227,3 +227,26 @@ class RingingForNews(Base):
         refreshing.refresh(bridge)
         publishing.publish(bridge)
         self.assertEqual(bridge.snapshot["sg"], 2)
+
+    def test_a_second_file_page_or_pr_or_older_batch_still_rings(self):
+        bridge, _ = self.make()
+        refreshing.refresh(bridge)
+        publishing.publish(bridge)
+        bridge.keep_loaded(THREAD, fp=["big.lua", 1, 3, 1, 1, "page 1"])
+        publishing.publish(bridge)
+        first = bridge.bell
+        bridge.keep_loaded(THREAD, fp=["big.lua", 2, 3, 50, 50, "page 2"])
+        publishing.publish(bridge)
+        self.assertEqual(bridge.bell, first + 1, "page 2 of a file rings right away")
+        bridge.keep_loaded(THREAD, pd=[7, {"b": "pr 7"}])
+        publishing.publish(bridge)
+        pr_bell = bridge.bell
+        bridge.keep_loaded(THREAD, pd=[8, {"b": "pr 8"}])
+        publishing.publish(bridge)
+        self.assertEqual(bridge.bell, pr_bell + 1, "a second pull request rings right away")
+        bridge.keep_loaded(THREAD, ob=[["a", "older 1", "d", 5]], om=True, oc=10)
+        publishing.publish(bridge)
+        older_bell = bridge.bell
+        bridge.keep_loaded(THREAD, ob=[["a", "older 2", "d", 1]], om=False, oc=5)
+        publishing.publish(bridge)
+        self.assertEqual(bridge.bell, older_bell + 1, "a second older-messages batch rings right away")

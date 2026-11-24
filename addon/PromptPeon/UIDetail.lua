@@ -3,16 +3,17 @@
 
 local _, ns = ...
 local UI = ns.UI
-local PAD, addFold, hideScrollBarWhenIdle = UI.PAD, UI.AddFold, UI.HideScrollBarWhenIdle
+local PAD, THEME, addFold, hideScrollBarWhenIdle = UI.PAD, UI.THEME, UI.AddFold, UI.HideScrollBarWhenIdle
 
 local LOAD_PATIENCE = 30
 
 function UI:BuildDetail(frame)
   local title = frame:CreateFontString(nil, "OVERLAY", "PromptPeonTitle")
-  title:SetPoint("TOPLEFT", self.top, "BOTTOMLEFT", UI.ListWidth() + PAD + 16, -2)
+  title:SetPoint("TOPLEFT", self.top, "BOTTOMLEFT", UI.ListWidth() + PAD + 16, -4)
   title:SetPoint("RIGHT", frame, "RIGHT", -PAD - 6, 0)
   title:SetJustifyH("LEFT")
   title:SetWordWrap(false)
+  title:SetTextColor(THEME.text[1], THEME.text[2], THEME.text[3])
   self.title = title
   self.titleLeft = UI.ListWidth() + PAD + 16
 
@@ -23,21 +24,29 @@ function UI:BuildDetail(frame)
   meta:SetWordWrap(false)
   self.meta = meta
 
-  -- What you do to the open thread, as small icon buttons beside its name.
+  -- Subtle 1px divider separating thread header from message content.
+  local headerRule = frame:CreateTexture(nil, "BORDER")
+  headerRule:SetPoint("TOPLEFT", meta, "BOTTOMLEFT", 0, -6)
+  headerRule:SetPoint("RIGHT", frame, "RIGHT", -PAD - 6, 0)
+  headerRule:SetHeight(1)
+  headerRule:SetColorTexture(THEME.divider[1], THEME.divider[2], THEME.divider[3], THEME.divider[4])
+  self.detailHeaderRule = headerRule
+
+  -- What you do to the open thread, as sleek flat icon buttons beside its name.
   local function action(onClick)
-    local button = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-    button:SetSize(24, 18)
+    local button = UI.FlatButton(frame, 24, 20)
     button.icon = button:CreateTexture(nil, "OVERLAY")
-    button.icon:SetSize(14, 14)
+    button.icon:SetSize(13, 13)
     button.icon:SetPoint("CENTER")
+    button.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
     button:SetScript("OnClick", onClick)
-    button:SetScript("OnEnter", function(self)
+    button._onEnter = function(self)
       GameTooltip:SetOwner(self, "ANCHOR_TOP")
-      GameTooltip:AddLine(self.label, 1, 0.82, 0)
+      GameTooltip:AddLine(self.label, THEME.accent[1], THEME.accent[2], THEME.accent[3])
       GameTooltip:AddLine(self.detail, 1, 1, 1, true)
       GameTooltip:Show()
-    end)
-    button:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    end
+    button._onLeave = function() GameTooltip:Hide() end
     button:Hide()
     return button
   end
@@ -45,12 +54,12 @@ function UI:BuildDetail(frame)
   -- it sent out. They're tabs in a second group under the pages, each with a count.
   local function viewTab(name, verb, icon)
     local tab = self:SideTab(icon, function() UI:ToggleView(name, verb) end, function(self)
-      GameTooltip:AddLine(self.label, 1, 0.82, 0)
+      GameTooltip:AddLine(self.label, THEME.accent[1], THEME.accent[2], THEME.accent[3])
       GameTooltip:AddLine(self.detail, 1, 1, 1, true)
     end)
     tab.ofThread = true
     tab.count = tab:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
-    tab.count:SetPoint("BOTTOMRIGHT", -2, 2)
+    tab.count:SetPoint("BOTTOMRIGHT", -3, 2)
     tab:Hide()
     return tab
   end
@@ -68,19 +77,16 @@ function UI:BuildDetail(frame)
     if thread then UI:ToggleHidden(thread) end
   end)
 
-  -- Model and effort sit by the reply box, where T3 keeps them too.
+  -- Model and effort sit by the reply box, styled as clean flat pills.
   local function chip(width, onClick)
-    local button = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-    button:SetSize(width, 18)
-    button:SetNormalFontObject("GameFontNormalSmall")
-    button:SetHighlightFontObject("GameFontHighlightSmall")
+    local button = UI.FlatButton(frame, width, 20)
     button:SetScript("OnClick", onClick)
-    button:SetScript("OnEnter", function(self)
+    button._onEnter = function(self)
       GameTooltip:SetOwner(self, "ANCHOR_TOP")
       GameTooltip:AddLine("The next turn uses this.", 1, 1, 1, true)
       GameTooltip:Show()
-    end)
-    button:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    end
+    button._onLeave = function() GameTooltip:Hide() end
     button:Hide()
     return button
   end
@@ -88,7 +94,7 @@ function UI:BuildDetail(frame)
     local current, choose = UI:ModelTarget(ns:ThreadById(ns.db.selected))
     if current then UI:EffortMenu(self, current, choose) end
   end)
-  self.modelChip = chip(124, function(self)
+  self.modelChip = chip(128, function(self)
     local current, choose = UI:ModelTarget(ns:ThreadById(ns.db.selected))
     if current then UI:ModelMenu(self, current, choose) end
   end)
@@ -97,7 +103,7 @@ function UI:BuildDetail(frame)
   self.filePages = {}
 
   local scroll = CreateFrame("ScrollFrame", "PromptPeonDetailScroll", frame, "UIPanelScrollFrameTemplate")
-  scroll:SetPoint("TOPLEFT", meta, "BOTTOMLEFT", 0, -8)
+  scroll:SetPoint("TOPLEFT", meta, "BOTTOMLEFT", 0, -12)
   scroll:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -PAD - 22, 126)
   local content = CreateFrame("Frame", nil, scroll)
   content:SetSize(10, 10)
@@ -122,6 +128,7 @@ function UI:BuildDetail(frame)
 
   local empty = frame:CreateFontString(nil, "OVERLAY", "PromptPeonBody")
   empty:SetPoint("CENTER", scroll, "CENTER")
+  empty:SetTextColor(THEME.textDim[1], THEME.textDim[2], THEME.textDim[3])
   self.empty = empty
 end
 
@@ -143,21 +150,25 @@ function UI:GroupHead(index)
   if head then
     head.right:SetText("")
     head.onClick = nil
+    head.foldable = true
     return head
   end
   head = CreateFrame("Button", nil, self.detailContent)
-  addFold(head, 14, "LEFT", -1, 0)
+  addFold(head, 14, "LEFT", 0, 0)
   -- A column at the right edge, so counts line up however long the names are.
   head.right = head:CreateFontString(nil, "OVERLAY", "PromptPeonSmall")
   head.right:SetPoint("RIGHT", -4, 0)
   head.right:SetJustifyH("RIGHT")
   head.right:SetWordWrap(false)
   head.text = head:CreateFontString(nil, "OVERLAY", "PromptPeonSmall")
-  head.text:SetPoint("LEFT", 15, 0)
+  head.text:SetPoint("LEFT", 16, 0)
   head.text:SetPoint("RIGHT", head.right, "LEFT", -8, 0)
   head.text:SetJustifyH("LEFT")
   head.text:SetWordWrap(false)
-  head:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestLogTitleHighlight", "ADD")
+  local hl = head:CreateTexture(nil, "HIGHLIGHT")
+  hl:SetAllPoints()
+  hl:SetColorTexture(THEME.rowHover[1], THEME.rowHover[2], THEME.rowHover[3], THEME.rowHover[4])
+  head.foldable = true
   -- These lines are reused from one redraw to the next. A press that began while the line stood for
   -- one thing does nothing if it stands for another by the time the button comes up.
   head:SetScript("OnMouseDown", function(self) self.pressedKey = self.key end)
@@ -166,7 +177,7 @@ function UI:GroupHead(index)
     self.pressedKey = nil
     if pressedKey ~= nil and pressedKey ~= self.key then return end
     local nowOpen = not self.open
-    UI.groups[self.key] = nowOpen
+    if self.foldable ~= false then UI.groups[self.key] = nowOpen end
     if self.onClick then self.onClick(nowOpen, self) end
     UI:Render()
   end)
@@ -190,17 +201,16 @@ end
 function UI:ShowPicture(path, pictureWidth, pictureHeight, label)
   local viewer = self.viewer
   if not viewer then
-    viewer = CreateFrame("Button", "PromptPeonPicture", UIParent, "BackdropTemplate")
+    viewer = CreateFrame("Button", "PromptPeonPicture", UIParent)
     viewer:SetFrameStrata("DIALOG")
     viewer:SetPoint("CENTER")
-    viewer:SetBackdrop({ bgFile = "Interface\\ChatFrame\\ChatFrameBackground" })
-    viewer:SetBackdropColor(0, 0, 0, 0.92)
+    UI.SkinSurface(viewer, { 0.04, 0.05, 0.08, 0.96 }, THEME.borderStrong)
     viewer:RegisterForClicks("LeftButtonUp", "RightButtonUp")
     viewer:SetScript("OnClick", function(self) self:Hide() end)
     viewer.tex = viewer:CreateTexture(nil, "ARTWORK")
-    viewer.tex:SetPoint("TOPLEFT", 6, -6)
+    viewer.tex:SetPoint("TOPLEFT", 8, -8)
     viewer.caption = viewer:CreateFontString(nil, "OVERLAY", "PromptPeonSmall")
-    viewer.caption:SetPoint("BOTTOM", 0, 5)
+    viewer.caption:SetPoint("BOTTOM", 0, 7)
     table.insert(UISpecialFrames, "PromptPeonPicture") -- Escape closes it.
     self.viewer = viewer
   end
@@ -208,8 +218,8 @@ function UI:ShowPicture(path, pictureWidth, pictureHeight, label)
   local shownWidth, shownHeight = pictureWidth * scale, pictureHeight * scale
   viewer.tex:SetSize(shownWidth, shownHeight)
   viewer.tex:SetTexture(path)
-  viewer.caption:SetText(ns.Plain(label) .. "  |cff888888Click to close|r")
-  viewer:SetSize(shownWidth + 12, shownHeight + 30)
+  viewer.caption:SetText(ns.Plain(label) .. "  |cff7c828dClick to close|r")
+  viewer:SetSize(shownWidth + 16, shownHeight + 34)
   viewer:Show()
 end
 
@@ -236,7 +246,7 @@ function UI:ToggleView(name, verb)
     end
     if verb then ns:QueueCommand(thread.id, verb) end -- Pull requests come with the thread.
   end
-  self.shownThread = nil
+  self.shownThread, self.shownKey = nil, nil
   self:Render()
 end
 

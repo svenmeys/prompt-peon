@@ -735,11 +735,11 @@ check("nor is a finished thread", not ns:IsTracked(quiet))
 ns:ToggleTracked(working)
 local trackRow = trackRowFor("Feel")
 check("pinned by hand, it is on the tracker", trackRow ~= nil and ns:IsTracked(working))
-check("it starts collapsed, with WoW's plus", trackRow.fold.texture:find("UI-PlusButton-Up", 1, true) and not trackRow.body.shown)
+check("it starts collapsed, with closed chevron", trackRow.fold.text == ">" and not trackRow.body.shown)
 stub.shift = false
 trackRow.scripts.OnClick(trackRow, "LeftButton")
 trackRow = trackRowFor("Feel")
-check("clicking expands it, with WoW's minus", trackRow.fold.texture:find("UI-MinusButton-Up", 1, true) and trackRow.body.shown)
+check("clicking expands it, with open chevron", trackRow.fold.text == "v" and trackRow.body.shown)
 check("expanded shows activity", trackRow.body.text:find("Thinking", 1, true), trackRow.body.text)
 check("expanded shows todo progress and the step", trackRow.body.text:find("1/3  Second", 1, true), trackRow.body.text)
 check("expanded shows the latest words", trackRow.body.text:find("Latest words", 1, true), trackRow.body.text)
@@ -1250,7 +1250,7 @@ local agentHead = ns.UI.heads[1]
 check("a working subagent shows its state", agentHead.text.text:find("Agent: Scout the code (working)", 1, true), agentHead.text.text)
 local doneHead = ns.UI.heads[2]
 check("one with nothing to open has no button", not agentHead.fold.shown)
-check("a finished one says done and can open", doneHead.text.text:find("Agent: Review it (done)", 1, true) and doneHead.fold.shown and doneHead.fold.texture:find("UI-PlusButton-Up", 1, true), doneHead.text.text)
+check("a finished one says done and can open", doneHead.text.text:find("Agent: Review it (done)", 1, true) and doneHead.fold.shown and doneHead.fold.text == ">", doneHead.text.text)
 check("its result starts closed", not lineWith("Findings"))
 doneHead.scripts.OnClick(doneHead)
 check("clicking shows the result, formatted", lineWith("Findings") and lineWith("|cffffffffreal|r"))
@@ -1337,11 +1337,11 @@ changedThread({ dn = "", df = {
 local summaryHead, fileHead, hugeHead, logoHead = ns.UI.heads[1], ns.UI.heads[2], ns.UI.heads[3], ns.UI.heads[4]
 check("a summary leads, with totals in the same column", summaryHead.text.text:find("3 files changed", 1, true) and summaryHead.right.text:find("+9001", 1, true) and summaryHead.right.text:find("-3", 1, true), summaryHead.text.text)
 check("the summary has nothing to open", not summaryHead.fold.shown)
-check("files arrive closed", fileHead.fold.texture:find("UI-PlusButton-Up", 1, true) and not lineWith("new line"))
+check("files arrive closed", fileHead.fold.text == ">" and not lineWith("new line"))
 check("the name comes before the folder", fileHead.text.text:find("x.lua", 1, true) < fileHead.text.text:find("src/ui", 1, true), fileHead.text.text)
 check("counts sit in the right column, not after the name", hugeHead.right.text:find("+9000", 1, true) and hugeHead.right.text:find("-2", 1, true) and not hugeHead.text.text:find("9000", 1, true), hugeHead.right.text)
 fileHead.scripts.OnClick(fileHead)
-check("an open file shows WoW's minus", ns.UI.heads[2].fold.texture:find("UI-MinusButton-Up", 1, true))
+check("an open file shows open chevron", ns.UI.heads[2].fold.text == "v")
 check("the code uses the code font", (function()
   for _, line in ipairs(ns.UI.lines) do
     if line.shown and line.text:find("new line", 1, true) then return line.fontObject == "PromptPeonCode" end
@@ -2241,7 +2241,7 @@ grip.scripts.OnUpdate(grip)
 check("it stops at the smallest size", window2.width == ns.UI.minWidth and window2.height == ns.UI.MIN_HEIGHT, window2.height)
 stub.cursorX, stub.cursorY = 900000, -900000
 grip.scripts.OnUpdate(grip)
-check("it can't get bigger than the screen", window2.width == UIParent:GetWidth() - window2:GetLeft() and window2.height == window2:GetTop(), window2.width)
+check("it can't get bigger than the screen", window2.width == UIParent:GetWidth() - window2:GetLeft() - ns.UI.SIDE_REACH and window2.height == window2:GetTop(), window2.width)
 stub.cursorX, stub.cursorY = 700, 350
 grip.scripts.OnUpdate(grip)
 check("and it comes back down", window2.width == 720, window2.width)
@@ -2990,17 +2990,16 @@ do local function parkedAndMarks()
     check("each one sits off the right edge, none in the title bar", offEdge)
     local pitchOk = #tabs == 6
     for index = 2, 3 do
-      pitchOk = pitchOk and tabs[index - 1].lastPoint[5] - tabs[index].lastPoint[5] >= 49
+      pitchOk = pitchOk and tabs[index - 1].lastPoint[5] - tabs[index].lastPoint[5] >= UI3.SIDE_TAB
     end
-    check("far enough apart that the tab art doesn't overlap", pitchOk)
+    check("far enough apart that the flat tabs don't overlap", pitchOk)
     check("the dice and coin are gone from the title bar", UI3.greedIcon == nil and UI3.needIcon == nil)
     check("they're tabs you can see pressed", UI3.options.kind == "CheckButton" and UI3.achievementsIcon.kind == "CheckButton")
-    local glowing = #tabs > 0
+    local hasActiveBar = #tabs > 0
     for _, tab in ipairs(tabs) do
-      local pressed = tab:GetCheckedTexture()
-      glowing = glowing and pressed ~= nil and pressed.blendMode == "ADD"
+      hasActiveBar = hasActiveBar and tab.activeBar ~= nil and tab._edges ~= nil
     end
-    check("a pressed tab glows over its icon and doesn't cover it", glowing)
+    check("a pressed tab highlights with a flat active indicator bar", hasActiveBar)
     local reloads = stub.reloads
     UI3.options.scripts.OnClick(UI3.options)
     check("the options tab opens Options and stays pressed", UI3.showOptions == true and UI3.options:GetChecked() == true)
@@ -3084,9 +3083,9 @@ do local function parkedAndMarks()
       UI3:Render()
       local lowest = 0
       for _, tab in ipairs(UI3.sideTabs) do
-        if tab.shown then lowest = math.max(lowest, -tab.lastPoint[5] + tab.height + 13) end
+        if tab.shown then lowest = math.max(lowest, -tab.lastPoint[5] + tab.height) end
       end
-      check("all six tabs and their art fit beside the smallest window", lowest == 334 and lowest <= UI3.MIN_HEIGHT, lowest)
+      check("all six tabs fit beside the smallest window", lowest > 0 and lowest <= UI3.MIN_HEIGHT, lowest)
       window:SetSize(widthWas, heightWas)
       window.scripts.OnSizeChanged(window)
       local reloads = stub.reloads
@@ -3841,7 +3840,7 @@ for _, row in ipairs(ns.UI.rows) do
   if row.shown and row.foldKey == "quietClosed" then quietRow = row end
   if row.shown and row.thread and row.thread.id == THREAD then threadInList = row end
 end
-check("the open Quiet group shows WoW's minus", quietRow.fold.shown and quietRow.fold.texture:find("UI-MinusButton-Up", 1, true))
+check("the open Quiet group shows open chevron", quietRow.fold.shown and quietRow.fold.text == "v")
 check("no typed mark is left", not quietRow.text.text:find("^[-+] "), quietRow.text.text)
 check("a thread row has no button", not threadInList.fold.shown)
 check("and says its project in two letters", threadInList.tag.text:find("SH", 1, true) ~= nil, threadInList.tag.text)
@@ -3851,7 +3850,7 @@ for _, row in ipairs(ns.UI.rows) do
   if row.shown and row.foldKey == "quietClosed" then quietRow = row end
   if row.shown and row.thread and row.thread.id == THREAD then threadInList = row end
 end
-check("a click closes it, with WoW's plus, and it stays closed", quietRow.fold.texture:find("UI-PlusButton-Up", 1, true) and threadInList == nil and PromptPeonDB.quietClosed == true)
+check("a click closes it, with closed chevron, and it stays closed", quietRow.fold.text == ">" and threadInList == nil and PromptPeonDB.quietClosed == true)
 PromptPeonDB.quietClosed = nil
 ctlStamp = ctlStamp + 1
 stub.now = stub.now + 100
@@ -4456,7 +4455,7 @@ do
   ui.frame:SetWidth(1400)
   ui:ApplyLayout()
   check("back in a wide window they go back", ui.spellLift == 0, ui.spellLift)
-  check("on the game's own action bar art", Game.spellBar.stone[1].texture:find("UI-MainMenuBar", 1, true))
+  check("styled as a flat dark toolbar tray", Game.spellBar._bg ~= nil and Game.spellBar._edges ~= nil)
   ui.frame:SetWidth(widthBefore)
   ui:FitToSize()
 end
@@ -5432,6 +5431,79 @@ do
       if line == "## AddonCompartmentFunc: PromptPeon_Toggle" then return type(PromptPeon_Toggle) == "function" end
     end
   end)())
+end
+
+-- Bug fixes & clean flat UI regression checks.
+do
+  local ui = ns.UI
+  local ERR_THREAD = "22222222-0000-4000-8000-000000000022"
+  stub.now = stub.now + 100
+  stub.slotData = snapshot({ ack = PromptPeonDB.nextSeq - 1, at = time() + 95000, pk = {}, pj = { "Shop" }, threads = {
+    { id = ERR_THREAD, p = "Shop", t = "Broken", s = "needs", e = "Something exploded", u = time(), m = { { "a", "hello", "d", 1 } } },
+  } })
+  ns:RefreshAndRender()
+  ui:OpenThread(ERR_THREAD)
+
+  -- Needs/error banner never bleeds onto Options or other pages.
+  local scrolledTo
+  local origSetScroll = ui.detailScroll.SetVerticalScroll
+  local origGetScroll = ui.detailScroll.GetVerticalScroll
+  ui.detailScroll.GetVerticalScroll = function() return 400 end
+  ui.detailScroll.SetVerticalScroll = function(_, v) scrolledTo = v end
+  ui:ToggleOptions()
+  local bled = false
+  for _, line in ipairs(ui.lines) do
+    if line.shown and (tostring(line.text):find("exploded", 1, true) or tostring(line.text):find("waiting for your approval", 1, true)) then bled = true end
+  end
+  check("thread error and needs banners never bleed onto Options", not bled)
+  check("switching from a scrolled thread to Options resets scroll to top", scrolledTo == 0, scrolledTo)
+  ui:ToggleOptions()
+  ui.detailScroll.SetVerticalScroll, ui.detailScroll.GetVerticalScroll = origSetScroll, origGetScroll
+
+  -- Dropdown menus register with UISpecialFrames and close when the main window hides.
+  ui:ShowMenu(ui.frame, { { text = "Item", run = function() end } })
+  local inSpecial = false
+  for _, name in ipairs(UISpecialFrames) do if name == "PromptPeonMenuCatcher" then inSpecial = true end end
+  check("dropdown menu catcher closes on Escape via UISpecialFrames", inSpecial and ui.menuCatcher.shown)
+  -- Window stays opaque while its own menu is open even when mouse is elsewhere.
+  stub.mouseOver = false
+  ui.frame:SetAlpha(0.84)
+  ui.frame.scripts.OnUpdate(ui.frame, 0.2)
+  check("window stays opaque while its own dropdown menu is open", ui.frame:GetAlpha() > 0.9, ui.frame:GetAlpha())
+  ui.frame:Hide()
+  check("hiding the main window closes any open dropdown menu", not ui.menuCatcher.shown)
+  ui.frame:Show()
+
+  -- List divider drag releases automatically if mouse button is no longer held.
+  ui.listEdge.scripts.OnMouseDown(ui.listEdge)
+  check("list divider enters dragging state", ui.listEdge.dragging == true)
+  stub.mouseDown = false
+  ui.listEdge.scripts.OnUpdate(ui.listEdge)
+  check("list divider stops dragging when left mouse button is released", ui.listEdge.dragging == nil)
+  stub.mouseDown = true
+
+  -- Failed replies containing pipes are escaped when returned to drafts.
+  local seq = PromptPeonDB.nextSeq
+  ns:QueueReply(ERR_THREAD, "echo foo || grep bar")
+  stub.now = stub.now + 100
+  stub.slotData = snapshot({ ack = seq, res = { [tostring(seq)] = "failed: refused" }, at = time() + 96000, pk = {}, pj = { "Shop" }, threads = {
+    { id = ERR_THREAD, p = "Shop", t = "Broken", s = "done", u = time(), m = { { "a", "hello", "d", 1 } } },
+  } })
+  ns:RefreshAndRender()
+  check("failed reply with pipe is escaped before restoring to draft", PromptPeonDB.drafts[ERR_THREAD] == "echo foo || grep bar", PromptPeonDB.drafts[ERR_THREAD])
+
+  -- New thread button works even when no thread is open, as long as projects exist.
+  stub.now = stub.now + 100
+  stub.slotData = snapshot({ ack = PromptPeonDB.nextSeq - 1, at = time() + 97000, pk = {}, pj = { "Shop" }, threads = {} })
+  PromptPeonDB.selected = nil
+  ns:RefreshAndRender()
+  ui.newButton.scripts.OnClick(ui.newButton)
+  check("new thread button works with projects even when no thread is selected", ui.newThread ~= nil and ui.newThread.project == "Shop")
+  ui:StopNewThread()
+
+  -- Clean flat chrome and tracker card surfaces exist.
+  check("main frame uses clean flat chrome with hairline borders", ui.frame._bg ~= nil and ui.frame._edges ~= nil and ui.closeButton ~= nil)
+  check("tracker wraps inbox in a flat dark HUD card", ui.tracker.card ~= nil and ui.tracker.card._edges ~= nil and ui.tracker.card.accent ~= nil)
 end
 
 print(string.format("%d checks, %d failed", checks, failures))

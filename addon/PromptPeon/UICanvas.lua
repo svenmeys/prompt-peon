@@ -104,21 +104,24 @@ function UI:NewCanvas(width)
     texture:SetColorTexture(r, g, b, a)
     texture:Show()
   end
-  local BODY_R, BODY_G, BODY_B = 0.88, 0.86, 0.79
+  local THEME = UI.THEME
+  local BODY_R, BODY_G, BODY_B = THEME.text[1], THEME.text[2], THEME.text[3]
+  local headHeight = UI.HeadHeight()
 
   local function foldingHead(key, words, right, noFold, onClick, x)
     canvas.heads = canvas.heads + 1
     local head = self:GroupHead(canvas.heads)
     head.key, head.open = key, self.groups[key] == true
+    head.foldable = not noFold
     head.onClick = onClick
     if noFold then showFold(head, nil) else showFold(head, head.open) end
     head:ClearAllPoints()
     head:SetPoint("TOPLEFT", self.detailContent, "TOPLEFT", x or 0, -canvas.y)
-    head:SetSize(width - 4 - (x or 0), 14)
+    head:SetSize(width - 4 - (x or 0), headHeight)
     head.text:SetText(words)
     head.right:SetText(right or "")
     head:Show()
-    canvas.y = canvas.y + 17
+    canvas.y = canvas.y + headHeight + 3
     return head.open
   end
 
@@ -167,6 +170,7 @@ function UI:NewCanvas(width)
     for _, row in ipairs(rows) do columns = math.max(columns, #row) end
     if not self.measure then
       self.measure = self.detailContent:CreateFontString(nil, "OVERLAY", "PromptPeonBody")
+      self.measure:SetWordWrap(false)
       self.measure:Hide()
     end
     -- Saved, so a table you expanded is still expanded after a reload or the next login.
@@ -268,9 +272,12 @@ function UI:NewCanvas(width)
     end
     -- Only a table that had to be squeezed gets the control. On one that fits it would change nothing.
     if squeezed then
-      foldingHead(key, expanded and "|cffffd100Collapse table|r" or "|cffffd100Expand table|r",
-        sideways and "|cff888888Drag the bar, or hold Shift and scroll|r" or "", true,
-        function(nowOpen) UI:RememberWideTable(key, nowOpen) end, 4)
+      foldingHead(key, expanded and "|cfff0c461Collapse table|r" or "|cfff0c461Expand table|r",
+        sideways and "|cff7c828dDrag the bar, or hold Shift and scroll|r" or "", true,
+        function(nowOpen)
+          UI.groups[key] = nowOpen
+          UI:RememberWideTable(key, nowOpen)
+        end, 4)
     end
     canvas.y = canvas.y + 4
   end
@@ -293,24 +300,25 @@ function UI:NewCanvas(width)
         end
       elseif block.kind == "code" then
         local top = canvas.y
-        canvas.y = canvas.y + 4
-        for _, chunk in ipairs(ns.Chunks(block.text)) do
-          add(ns.Plain(chunk), 0.72, 0.87, 0.80, "PromptPeonCode", 8, width - 20)
-        end
-        canvas.y = canvas.y + 2
-        bar(0, top, width - 4, canvas.y - top, 0, 0, 0, 0.38)
         canvas.y = canvas.y + 5
+        for _, chunk in ipairs(ns.Chunks(block.text)) do
+          add(ns.Plain(chunk), 0.76, 0.89, 0.84, "PromptPeonCode", 10, width - 22)
+        end
+        canvas.y = canvas.y + 3
+        bar(0, top, width - 4, canvas.y - top, THEME.codeBg[1], THEME.codeBg[2], THEME.codeBg[3], THEME.codeBg[4])
+        bar(0, top, 2, canvas.y - top, THEME.borderStrong[1], THEME.borderStrong[2], THEME.borderStrong[3], 0.85)
+        canvas.y = canvas.y + 6
       elseif block.kind == "quote" then
         local top = canvas.y
         for _, chunk in ipairs(ns.Chunks(block.text)) do
-          add(ns.Markdown.Inline(chunk), 0.68, 0.66, 0.60, "PromptPeonBody", 10)
+          add(ns.Markdown.Inline(chunk), THEME.textDim[1], THEME.textDim[2], THEME.textDim[3], "PromptPeonBody", 12)
         end
-        bar(2, top, 2, canvas.y - top - 2, 0.6, 0.55, 0.35, 0.9)
-        canvas.y = canvas.y + 3
+        bar(2, top, 2, canvas.y - top - 2, THEME.accent[1], THEME.accent[2], THEME.accent[3], 0.75)
+        canvas.y = canvas.y + 4
       elseif block.kind == "rule" then
-        canvas.y = canvas.y + 3
-        bar(0, canvas.y, width - 4, 1, 0.6, 0.6, 0.6, 0.35)
-        canvas.y = canvas.y + 6
+        canvas.y = canvas.y + 4
+        bar(0, canvas.y, width - 4, 1, THEME.divider[1], THEME.divider[2], THEME.divider[3], 0.85)
+        canvas.y = canvas.y + 7
       elseif block.kind == "table" then
         tables = tables + 1
         drawTable(block.rows, UI.TableKey(key, block.rows, tables))

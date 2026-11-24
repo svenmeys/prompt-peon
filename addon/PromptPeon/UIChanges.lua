@@ -6,12 +6,12 @@ local diffCounts, plural = UI.DiffCounts, UI.Plural
 
 local DIM_R, DIM_G, DIM_B = 0.70, 0.68, 0.60
 
--- Text colour and background per kind of line. The background is the chat's code block, tinted.
+-- Text colour and background per kind of line. Deep dark-slate neutral band with clean semantic tints.
 local DIFF_STYLE = {
-  ["+"] = { text = { 0.62, 0.92, 0.64 }, back = { 0.07, 0.26, 0.12, 0.62 } },
-  ["-"] = { text = { 0.96, 0.64, 0.58 }, back = { 0.31, 0.09, 0.07, 0.62 } },
-  ["@"] = { text = { 0.52, 0.73, 1.00 }, back = { 0.09, 0.15, 0.27, 0.62 } },
-  [" "] = { text = { 0.72, 0.87, 0.80 }, back = { 0, 0, 0, 0.38 } },
+  ["+"] = { text = { 0.60, 0.92, 0.66 }, back = { 0.06, 0.22, 0.12, 0.68 } },
+  ["-"] = { text = { 0.96, 0.62, 0.58 }, back = { 0.28, 0.08, 0.08, 0.68 } },
+  ["@"] = { text = { 0.54, 0.76, 1.00 }, back = { 0.09, 0.15, 0.26, 0.68 } },
+  [" "] = { text = { 0.74, 0.84, 0.82 }, back = { 0.05, 0.06, 0.09, 0.78 } },
 }
 
 --- Split a line to fit, because a FontString can't indent the rows it wraps. Breaks at a space
@@ -164,15 +164,15 @@ function UI:DrawDiffFiles(canvas, thread)
     local count = page[3]
     if count > 1 then add("Page " .. number .. " of " .. count, DIM_R, DIM_G, DIM_B, "PromptPeonSmall", 15) end
     drawPatch(page[6], page[4], page[5])
-    local function pager(words, target)
+    local function pager(words, target, tag)
       canvas.y = canvas.y + 2
-      foldingHead(thread.id .. ":pager", "|cffffd100" .. words .. "|r", "|cff888888page " .. target .. " of " .. count .. "|r", true, function()
+      foldingHead(key .. ":pager:" .. tag, "|cfff0c461" .. words .. "|r", "|cff7c828dpage " .. target .. " of " .. count .. "|r", true, function()
         self.scrollToFile = key
         self:AskFilePage(thread, path, target)
       end)
     end
-    if number < count then pager("Next page", number + 1) end
-    if number > 1 then pager("Previous page", number - 1) end
+    if number < count then pager("Next page", number + 1, "next") end
+    if number > 1 then pager("Previous page", number - 1, "prev") end
   end
   for _, file in ipairs(kept.df) do
     local path, added, removed, patch, fits, secret = file[1], file[2], file[3], file[4], file[5], file[6]
@@ -181,7 +181,7 @@ function UI:DrawDiffFiles(canvas, thread)
     local isOpen = foldingHead(key, fileWords(path), diffCounts(added, removed), nil, not fits and function(nowOpen)
       if nowOpen then self:AskFilePage(thread, path, self.filePages[key] or 1) end
     end or nil)
-    bar(0, top - 1, width - 4, 16, 1, 1, 1, 0.05)
+    bar(0, top - 1, width - 4, UI.HeadHeight() + 2, 0.16, 0.20, 0.28, 0.45)
     canvas.y = canvas.y + 1
     if isOpen and secret then
       add("Kept out of the game because it looks like a secrets file. Open it in T3.", DIM_R, DIM_G, DIM_B, "PromptPeonSmall", 15)

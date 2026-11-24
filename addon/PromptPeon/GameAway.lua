@@ -175,7 +175,7 @@ function Game:OpenReport()
   end
   self.reportFresh = nil
   if ns.UI.newThread then ns.UI:StopNewThread() end
-  ns.UI.showReport, ns.UI.showOptions, ns.UI.showAchievements = true, nil, nil
+  ns.UI.showReport, ns.UI.showOptions, ns.UI.showAchievements, ns.UI.shownKey = true, nil, nil, nil
   if ns.UI:IsOpen() then ns.UI:Render() else ns.UI:Toggle() end
 end
 

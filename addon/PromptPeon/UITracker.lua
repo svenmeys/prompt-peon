@@ -19,9 +19,13 @@ function UI:PlaceTracker()
   end
 end
 
+local TRACK_WIDTH = 264
+local TRACK_MAX = 6
+
 function UI:BuildTracker()
+  local THEME = UI.THEME
   local tracker = CreateFrame("Button", "PromptPeonTracker", UIParent)
-  tracker:SetSize(290, 18)
+  tracker:SetSize(TRACK_WIDTH, 24)
   self.tracker = tracker
   self:PlaceTracker()
   -- Their list comes and goes as you track quests, so ours follows.
@@ -40,11 +44,40 @@ function UI:BuildTracker()
     ns.db.tracker = { point, relative, x, y }
   end)
   tracker:SetScript("OnClick", function() UI:Toggle() end)
-  tracker:SetScript("OnEnter", function(self) UI:ShowTrackerTip(self) end)
-  tracker:SetScript("OnLeave", function() GameTooltip:Hide() end)
-  tracker.text = tracker:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-  tracker.text:SetAllPoints()
-  tracker.text:SetJustifyH("RIGHT")
+  tracker:SetScript("OnEnter", function(self)
+    UI.SetBorderColor(self.card, THEME.borderStrong[1], THEME.borderStrong[2], THEME.borderStrong[3], THEME.borderStrong[4])
+    UI:ShowTrackerTip(self)
+  end)
+  tracker:SetScript("OnLeave", function(self)
+    UI.SetBorderColor(self.card, THEME.border[1], THEME.border[2], THEME.border[3], THEME.border[4])
+    GameTooltip:Hide()
+  end)
+
+  -- Compact dark-slate HUD card wrapping the tracker header and its active inbox rows.
+  local card = CreateFrame("Frame", nil, tracker)
+  card:SetPoint("TOPLEFT", tracker, "TOPLEFT", 0, 0)
+  card:SetWidth(TRACK_WIDTH)
+  card:SetHeight(24)
+  card:SetFrameLevel(math.max(0, (tracker:GetFrameLevel() or 1) - 1))
+  UI.SkinSurface(card, { THEME.bg[1], THEME.bg[2], THEME.bg[3], 0.88 }, THEME.border)
+  local accent = card:CreateTexture(nil, "OVERLAY")
+  accent:SetPoint("TOPLEFT", 1, -1)
+  accent:SetPoint("TOPRIGHT", -1, -1)
+  accent:SetHeight(2)
+  accent:SetColorTexture(THEME.accent[1], THEME.accent[2], THEME.accent[3], 0.9)
+  card.accent = accent
+  local headerBg = card:CreateTexture(nil, "BACKGROUND", nil, 1)
+  headerBg:SetPoint("TOPLEFT", 1, -3)
+  headerBg:SetPoint("TOPRIGHT", -1, -3)
+  headerBg:SetHeight(21)
+  headerBg:SetColorTexture(THEME.header[1], THEME.header[2], THEME.header[3], 0.92)
+  tracker.card = card
+
+  tracker.text = tracker:CreateFontString(nil, "OVERLAY", "PromptPeonHeader")
+  tracker.text:SetPoint("LEFT", 8, -1)
+  tracker.text:SetPoint("RIGHT", -8, -1)
+  tracker.text:SetJustifyH("LEFT")
+  tracker.text:SetWordWrap(false)
 end
 
 function UI:ShowTrackerTip(owner)
@@ -74,30 +107,39 @@ function UI:RenderTracker()
   if #parts == 0 then parts[1] = counts.total .. " open" end
   local prefix = problem and colored(STATUS.error, "T3 offline") or ns:Workers().label
   self.tracker.text:SetText(prefix .. ": " .. table.concat(parts, ", "))
+  if self.tracker.card then
+    local bar = (problem or counts.error > 0) and STATUS.error
+      or counts.needs > 0 and STATUS.needs
+      or counts.running > 0 and STATUS.running
+      or STATUS.done
+    self.tracker.card.accent:SetColorTexture(bar.r, bar.g, bar.b, 0.95)
+  end
   self:RenderTrackedThreads(inbox)
 end
 
-local TRACK_WIDTH = 250
-local TRACK_MAX = 6
-
 function UI:TrackRow(index)
+  local THEME = UI.THEME
   self.trackRows = self.trackRows or {}
   local row = self.trackRows[index]
   if row then return row end
   row = CreateFrame("Button", nil, self.tracker)
-  row:SetWidth(TRACK_WIDTH)
+  row:SetWidth(TRACK_WIDTH - 12)
   row:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-  addFold(row, 14, "TOPLEFT", -1, 1)
+  local hl = row:CreateTexture(nil, "HIGHLIGHT")
+  hl:SetAllPoints()
+  hl:SetColorTexture(THEME.rowHover[1], THEME.rowHover[2], THEME.rowHover[3], THEME.rowHover[4])
+  addFold(row, 14, "TOPLEFT", 0, 0)
   row.title = row:CreateFontString(nil, "OVERLAY", "PromptPeonHeader")
-  row.title:SetPoint("TOPLEFT", 14, 0)
+  row.title:SetPoint("TOPLEFT", 15, 0)
   row.title:SetPoint("TOPRIGHT")
   row.title:SetJustifyH("LEFT")
   row.title:SetWordWrap(false)
   row.body = row:CreateFontString(nil, "OVERLAY", "PromptPeonSmall")
   row.body:SetPoint("TOPLEFT", row.title, "BOTTOMLEFT", 0, -2)
-  row.body:SetWidth(TRACK_WIDTH - 14)
+  row.body:SetWidth(TRACK_WIDTH - 28)
   row.body:SetJustifyH("LEFT")
   row.body:SetWordWrap(true)
+  row.body:SetTextColor(THEME.text[1], THEME.text[2], THEME.text[3])
   row:SetScript("OnClick", function(self, button)
     if button == "RightButton" then
       UI:ThreadMenu(self, self.thread)
@@ -182,23 +224,26 @@ local WHOLE_ON_TRACKER = 300 -- Characters. A request longer than this is read, 
 
 --- A line under a tracker row that does something when clicked: an answer, Approve, Decline.
 function UI:TrackChoice(index)
+  local THEME = UI.THEME
   self.trackChoices = self.trackChoices or {}
   local line = self.trackChoices[index]
   if line then return line end
   line = CreateFrame("Button", nil, self.tracker)
-  line:SetSize(TRACK_WIDTH - 14, CHOICE_HEIGHT)
+  line:SetSize(TRACK_WIDTH - 26, CHOICE_HEIGHT)
   line.text = line:CreateFontString(nil, "OVERLAY", "PromptPeonSmall")
-  line.text:SetPoint("TOPLEFT")
-  line.text:SetPoint("TOPRIGHT")
+  line.text:SetPoint("TOPLEFT", 4, -1)
+  line.text:SetPoint("TOPRIGHT", -4, -1)
   line.text:SetJustifyH("LEFT")
   line.text:SetWordWrap(false)
   -- What the answer means, under it, when the question says.
   line.detail = line:CreateFontString(nil, "OVERLAY", "PromptPeonSmall")
-  line.detail:SetPoint("TOPLEFT", line.text, "BOTTOMLEFT", 8, -1)
-  line.detail:SetWidth(TRACK_WIDTH - 22)
+  line.detail:SetPoint("TOPLEFT", line.text, "BOTTOMLEFT", 6, -1)
+  line.detail:SetWidth(TRACK_WIDTH - 36)
   line.detail:SetJustifyH("LEFT")
-  line.detail:SetTextColor(0.62, 0.60, 0.54)
-  line:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestLogTitleHighlight", "ADD")
+  line.detail:SetTextColor(THEME.textDim[1], THEME.textDim[2], THEME.textDim[3])
+  local hl = line:CreateTexture(nil, "HIGHLIGHT")
+  hl:SetAllPoints()
+  hl:SetColorTexture(THEME.rowHover[1], THEME.rowHover[2], THEME.rowHover[3], THEME.rowHover[4])
   -- The lines are reused every time the tracker redraws, and it redraws whenever news arrives. A
   -- press that began on one thread's answer does nothing if the line is another's when you let go.
   line:SetScript("OnMouseDown", function(self) self.pressed = self.what end)
@@ -289,7 +334,7 @@ end
 --- read, then anything you pinned by hand. A thread that's just working is only in the count above.
 --- One that's waiting on you is unfolded already, with its answers to click.
 function UI:RenderTrackedThreads(inbox)
-  local index, y, total, used = 0, 0, 0, 0
+  local index, y, total, used = 0, 4, 0, 0
   for _, thread in ipairs(inbox) do
     total = total + 1
     if index < TRACK_MAX then
@@ -304,37 +349,46 @@ function UI:RenderTrackedThreads(inbox)
       row.title:SetText(colored(info, "[" .. info.tag .. "]") .. " " .. ns.Plain(thread.t))
       row.body:SetText(open and (words or trackedLines(thread)) or "")
       row.body:SetShown(open)
-      local height = 15 + (open and (row.body:GetStringHeight() + 4) or 0)
+      local titleH = math.max(16, math.ceil(row.title:GetStringHeight() or 16))
+      local height = titleH + (open and (math.ceil(row.body:GetStringHeight() or 0) + 5) or 2)
       row:SetHeight(height) -- Without its lines, which are buttons of their own under it.
       row:ClearAllPoints()
-      row:SetPoint("TOPRIGHT", self.tracker, "BOTTOMRIGHT", 0, -2 - y)
+      row:SetPoint("TOPRIGHT", self.tracker, "BOTTOMRIGHT", -6, -y)
       row:Show()
       for _, entry in ipairs(lines or {}) do
         used = used + 1
         local line = self:TrackChoice(used)
         line.run, line.what = entry.run, entry.what
-        line.text:SetText("|cffffd100" .. entry.words .. "|r")
+        line.text:SetText("|cfff0c461" .. entry.words .. "|r")
         local detail = entry.detail and entry.detail ~= ""
         line.detail:SetText(detail and entry.detail or "")
         line.detail:SetShown(detail or false)
-        local tall = CHOICE_HEIGHT + (detail and (line.detail:GetStringHeight() + 3) or 0)
+        local lineH = math.max(CHOICE_HEIGHT + 2, math.ceil(line.text:GetStringHeight() or CHOICE_HEIGHT) + 4)
+        local tall = lineH + (detail and (math.ceil(line.detail:GetStringHeight() or 0) + 4) or 0)
         line:SetHeight(tall)
         line:ClearAllPoints()
-        line:SetPoint("TOPRIGHT", self.tracker, "BOTTOMRIGHT", 0, -2 - y - height)
+        line:SetPoint("TOPRIGHT", self.tracker, "BOTTOMRIGHT", -6, -y - height)
         line:Show()
-        height = height + tall
+        height = height + tall + 1
       end
-      y = y + height + 2
+      y = y + height + 4
     end
   end
   for extra = used + 1, #(self.trackChoices or {}) do self.trackChoices[extra]:Hide() end
   for extra = index + 1, #(self.trackRows or {}) do self.trackRows[extra]:Hide() end
   if not self.trackMore then
     self.trackMore = self.tracker:CreateFontString(nil, "OVERLAY", "PromptPeonSmall")
-    self.trackMore:SetWidth(TRACK_WIDTH)
+    self.trackMore:SetWidth(TRACK_WIDTH - 16)
     self.trackMore:SetJustifyH("LEFT")
+    self.trackMore:SetTextColor(UI.THEME.textMuted[1], UI.THEME.textMuted[2], UI.THEME.textMuted[3])
   end
   self.trackMore:ClearAllPoints()
-  self.trackMore:SetPoint("TOPRIGHT", self.tracker, "BOTTOMRIGHT", 0, -2 - y)
-  self.trackMore:SetText(total > index and ("+" .. (total - index) .. " more in the log") or "")
+  self.trackMore:SetPoint("TOPRIGHT", self.tracker, "BOTTOMRIGHT", -8, -y)
+  local hasMore = total > index
+  self.trackMore:SetText(hasMore and ("+" .. (total - index) .. " more in the log") or "")
+  if self.tracker.card then
+    local extra = hasMore and 18 or 0
+    local bodyH = index > 0 and (y + extra + 4) or 0
+    self.tracker.card:SetHeight(24 + bodyH)
+  end
 end
