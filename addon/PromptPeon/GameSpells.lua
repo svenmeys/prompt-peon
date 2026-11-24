@@ -84,46 +84,42 @@ function Game:CastNow(spell, thread)
   return true
 end
 
--- Sized so the buttons land in the slots of the game's action bar art, at two thirds of its size.
-local SPELL_SIZE = 24
-local SPELL_STEP = 28
-local SPELL_EDGE = 5
-local SPELL_BAR_HEIGHT = 29
-local SPELL_PIECE_WIDTH = 171
+-- Clean flat toolbar tray along the bottom of the log.
+local SPELL_SIZE = 22
+local SPELL_STEP = 26
+local SPELL_EDGE = 4
+local SPELL_BAR_HEIGHT = 28
 
 function Game:BuildSpellBar()
   local UI = ns.UI
+  local THEME = UI.THEME
   local bar = CreateFrame("Frame", nil, UI.frame)
   bar:SetSize(1, SPELL_BAR_HEIGHT)
-  -- The game's own action bar. Each piece holds six slots, cut off at however many we use.
-  bar.stone = {}
-  for piece, top in ipairs({ 0.83203125, 0.58203125 }) do
-    local stone = bar:CreateTexture(nil, "BACKGROUND")
-    stone:SetTexture("Interface\\MainMenuBar\\UI-MainMenuBar-Dwarf")
-    stone:SetHeight(SPELL_BAR_HEIGHT)
-    stone:SetPoint("TOPLEFT", bar, "TOPLEFT", (piece - 1) * SPELL_PIECE_WIDTH, 0)
-    stone.top = top
-    bar.stone[piece] = stone
-  end
+  UI.SkinSurface(bar, THEME.panel, THEME.border)
   bar.buttons = {}
   for index, spell in ipairs(Game.SPELLS) do
     local button = CreateFrame("Button", nil, bar)
     button:SetSize(SPELL_SIZE, SPELL_SIZE)
     button.spell = spell
+    UI.SkinSurface(button, THEME.input, THEME.border)
     button.icon = button:CreateTexture(nil, "ARTWORK")
-    button.icon:SetAllPoints()
+    button.icon:SetPoint("TOPLEFT", 1, -1)
+    button.icon:SetPoint("BOTTOMRIGHT", -1, 1)
     button.icon:SetTexture("Interface\\Icons\\" .. spell.icon)
     button.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92) -- Without the icon's own rough edge.
-    button:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
     button:SetScript("OnClick", function(self) Game:Cast(self.spell, ns:ThreadById(ns.db.selected)) end)
     button:SetScript("OnEnter", function(self)
+      UI.SetBorderColor(self, THEME.borderAccent[1], THEME.borderAccent[2], THEME.borderAccent[3], THEME.borderAccent[4])
       GameTooltip:SetOwner(self, "ANCHOR_TOP")
-      GameTooltip:AddLine(self.spell.name, 1, 0.82, 0)
-      GameTooltip:AddLine("Instant cast. Sends the open thread:", 0.6, 0.6, 0.6)
+      GameTooltip:AddLine(self.spell.name, THEME.accent[1], THEME.accent[2], THEME.accent[3])
+      GameTooltip:AddLine("Instant cast. Sends the open thread:", 0.65, 0.68, 0.74)
       GameTooltip:AddLine(self.spell.prompt, 1, 1, 1, true)
       GameTooltip:Show()
     end)
-    button:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    button:SetScript("OnLeave", function(self)
+      UI.SetBorderColor(self, THEME.border[1], THEME.border[2], THEME.border[3], THEME.border[4])
+      GameTooltip:Hide()
+    end)
     bar.buttons[index] = button
   end
   self.spellBar = bar
@@ -149,14 +145,14 @@ function Game:RenderSpellBar()
     if not button.spell.onlyWhenRed or red then wanted = wanted + 1 end
   end
   -- Too narrow to share the bottom row, so the bar gets a row of its own above the buttons.
-  local stacked = SPELL_EDGE + wanted * SPELL_STEP > room
-  UI:LiftForSpells(stacked and SPELL_BAR_HEIGHT + 1 or 0)
+  local stacked = SPELL_EDGE * 2 + wanted * SPELL_STEP > room
+  UI:LiftForSpells(stacked and SPELL_BAR_HEIGHT + 2 or 0)
   if stacked then room = UI.frame:GetWidth() - 24 end
   self.spellBar:ClearAllPoints()
-  self.spellBar:SetPoint("BOTTOMLEFT", UI.frame, "BOTTOMLEFT", 10, stacked and 36 or 6)
+  self.spellBar:SetPoint("BOTTOMLEFT", UI.frame, "BOTTOMLEFT", 8, stacked and 35 or 5)
   local x, now = SPELL_EDGE, GetTime()
   for _, button in ipairs(self.spellBar.buttons) do
-    local shown = (not button.spell.onlyWhenRed or red) and x + SPELL_SIZE <= room
+    local shown = (not button.spell.onlyWhenRed or red) and x + SPELL_SIZE + SPELL_EDGE <= room
     button:SetShown(shown or false)
     if shown then
       button:ClearAllPoints()
@@ -167,12 +163,4 @@ function Game:RenderSpellBar()
     end
   end
   self.spellBar:SetWidth(math.max(x, 1))
-  for piece, stone in ipairs(self.spellBar.stone) do
-    local shows = math.min(x - (piece - 1) * SPELL_PIECE_WIDTH, SPELL_PIECE_WIDTH)
-    stone:SetShown(shows > 0)
-    if shows > 0 then
-      stone:SetWidth(shows)
-      stone:SetTexCoord(0, shows / SPELL_PIECE_WIDTH, stone.top, stone.top + 0.16796875)
-    end
-  end
 end

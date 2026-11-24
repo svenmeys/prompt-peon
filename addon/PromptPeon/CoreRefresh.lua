@@ -165,7 +165,8 @@ function ns:Listen()
     self.hearing = nil
     local hears, rings = playing(okAlways and always), playing(okBell and bell)
     self.bellWorks = hears
-    if hears and not rings then self:HeardNews(count) end
+    -- Ignore if a manual refresh already moved us onto a newer snapshot while we listened.
+    if hears and not rings and tonumber(self.snapshot and self.snapshot.sg) == count then self:HeardNews(count) end
   end)
 end
 
@@ -212,7 +213,7 @@ function ns:Tick()
     return
   end
   local wait = self:RefreshWait()
-  if self.UI and self.UI:IsOpen() and self.UI:IsLoading(self:ThreadById(self.db.selected)) then wait = 5 end
+  if self.UI and self.UI:IsOpen() and (self.UI:IsLoading(self:ThreadById(self.db.selected)) or #self.starting > 0 or #self.sentShowing > 0) then wait = 5 end
   -- Just logged in: the real one is on its way. If the companion app isn't running it never comes,
   -- so hurry for a minute at most, or that alone would use up every update in about 80 minutes.
   if self.snapshot and self.snapshot.quiet and self.nextSlot <= self.QUIET_RUSH_SLOTS then wait = 5 end

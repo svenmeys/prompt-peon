@@ -25,23 +25,19 @@ function UI:ShowThreadTip(owner, thread)
 end
 
 function UI:BuildMenu()
-  -- Clicking anywhere else closes the menu.
-  local catcher = CreateFrame("Button", nil, UIParent)
+  local THEME = UI.THEME
+  -- Clicking anywhere else or pressing Escape closes the menu (and keeps the main window open).
+  local catcher = CreateFrame("Button", "PromptPeonMenuCatcher", UIParent)
   catcher:SetAllPoints(UIParent)
   catcher:SetFrameStrata("DIALOG")
   catcher:RegisterForClicks("LeftButtonUp", "RightButtonUp")
   catcher:SetScript("OnClick", function() UI:CloseMenu() end)
   catcher:Hide()
-  local menu = CreateFrame("Frame", "PromptPeonMenu", catcher, "BackdropTemplate")
+  table.insert(UISpecialFrames, "PromptPeonMenuCatcher")
+
+  local menu = CreateFrame("Frame", "PromptPeonMenu", catcher)
   menu:SetFrameStrata("FULLSCREEN_DIALOG")
-  menu:SetBackdrop({
-    bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
-    edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-    edgeSize = 12,
-    insets = { left = 3, right = 3, top = 3, bottom = 3 },
-  })
-  menu:SetBackdropColor(0, 0, 0, 0.92)
-  menu:SetBackdropBorderColor(0.6, 0.6, 0.6, 1)
+  UI.SkinSurface(menu, THEME.panel, THEME.borderStrong)
   self.menuCatcher, self.menu, self.menuButtons = catcher, menu, {}
 end
 
@@ -49,25 +45,28 @@ function UI:CloseMenu()
   if self.menuCatcher then self.menuCatcher:Hide() end
 end
 
---- A small native-looking list. Own frames, because the two clients have different menu systems.
---- A menu, in groups. Items are { text, run, keepOpen, checked } or { title } for a group's heading,
+--- A sleek flat dropdown menu. Items are { text, run, keepOpen, checked } or { title } for a heading,
 --- and false leaves one out.
 function UI:ShowMenu(owner, items)
+  local THEME = UI.THEME
   local shownItems = {}
   for _, item in ipairs(items) do
     if item then shownItems[#shownItems + 1] = item end
   end
   items = shownItems
   if not self.menu then self:BuildMenu() end
-  local width, y = 210, 6
+  local width, y = 216, 6
+  local rowH = math.max(20, UI.HeadHeight() + 2)
   for index, item in ipairs(items) do
     local button = self.menuButtons[index]
     if not button then
       button = CreateFrame("Button", nil, self.menu)
-      button:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestLogTitleHighlight", "ADD")
+      local hl = button:CreateTexture(nil, "HIGHLIGHT")
+      hl:SetAllPoints()
+      hl:SetColorTexture(THEME.rowHover[1], THEME.rowHover[2], THEME.rowHover[3], THEME.rowHover[4])
       button.text = button:CreateFontString(nil, "OVERLAY", "PromptPeonSmall")
-      button.text:SetPoint("LEFT", 6, 0)
-      button.text:SetPoint("RIGHT", -4, 0)
+      button.text:SetPoint("LEFT", 8, 0)
+      button.text:SetPoint("RIGHT", -6, 0)
       button.text:SetJustifyH("LEFT")
       button.text:SetWordWrap(false)
       button:SetScript("OnClick", function(self)
@@ -76,12 +75,12 @@ function UI:ShowMenu(owner, items)
       end)
       self.menuButtons[index] = button
     end
-    local height = item.title and 17 or 18
+    local height = item.title and (rowH - 1) or rowH
     button:ClearAllPoints()
-    button:SetPoint("TOPLEFT", self.menu, "TOPLEFT", 6, -y)
-    button:SetSize(width - 12, height)
+    button:SetPoint("TOPLEFT", self.menu, "TOPLEFT", 4, -y)
+    button:SetSize(width - 8, height)
     if item.title then
-      button.text:SetText("|cff9a9a9a" .. item.title .. "|r")
+      button.text:SetText("|cff848c9c" .. item.title .. "|r")
     else
       button.text:SetText((item.checked and "|TInterface\\Buttons\\UI-CheckBox-Check:12|t " or "") .. item.text)
     end
@@ -96,9 +95,9 @@ function UI:ShowMenu(owner, items)
   -- Low on the screen it opens upward, so it doesn't cover what you just clicked.
   local bottom = owner:GetBottom()
   if bottom and bottom < UIParent:GetHeight() / 3 then
-    self.menu:SetPoint("BOTTOMLEFT", owner, "TOPLEFT", 0, 2)
+    self.menu:SetPoint("BOTTOMLEFT", owner, "TOPLEFT", 0, 3)
   else
-    self.menu:SetPoint("TOPLEFT", owner, "BOTTOMLEFT", 12, 0)
+    self.menu:SetPoint("TOPLEFT", owner, "BOTTOMLEFT", 8, -2)
   end
   self.menu:SetClampedToScreen(true)
   self.menuCatcher:Show()

@@ -50,7 +50,7 @@ end
 
 function Game:OpenAchievements()
   if ns.UI.newThread then ns.UI:StopNewThread() end
-  ns.UI.showAchievements, ns.UI.showOptions, ns.UI.showReport = true, nil, nil
+  ns.UI.showAchievements, ns.UI.showOptions, ns.UI.showReport, ns.UI.shownKey = true, nil, nil, nil
   if ns.UI:IsOpen() then ns.UI:Render() else ns.UI:Toggle() end
 end
 

@@ -284,16 +284,19 @@ function ns:ApplyAcks(snapshot)
         self.UI.steering[entry.text:match("\n(.*)$") or ""] = nil
       end
       -- It didn't go, so give the words back rather than making you type them again.
+      -- Escape pipes for EditBox:SetText, which treats a single | as a colour/link code.
       if result:sub(1, 6) == "failed" and not entry.command and not db.drafts[entry.thread] then
-        db.drafts[entry.thread] = entry.text
+        db.drafts[entry.thread] = self.Plain(entry.text)
       end
       -- The same goes for what you wrote for a new thread that didn't start.
       if result:sub(1, 6) == "failed" and db.selected and not db.drafts[db.selected] then
+        local failedPrompt
         if entry.command == "newm" then
-          db.drafts[db.selected] = entry.text:match("^[^\n]*\n[^\n]*\n[^\n]*\n[^\n]*\n[^\n]*\n[^\n]*\n(.*)$")
+          failedPrompt = entry.text:match("^[^\n]*\n[^\n]*\n[^\n]*\n[^\n]*\n[^\n]*\n[^\n]*\n(.*)$")
         elseif entry.command == "new" then
-          db.drafts[db.selected] = entry.text:match("^[^\n]*\n[^\n]*\n[^\n]*\n(.*)$")
+          failedPrompt = entry.text:match("^[^\n]*\n[^\n]*\n[^\n]*\n(.*)$")
         end
+        if failedPrompt then db.drafts[db.selected] = self.Plain(failedPrompt) end
       end
       if entry.command == "ping" then
         if self.Chat then self.Chat:PingAnswered(result) end

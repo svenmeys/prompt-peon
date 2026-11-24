@@ -26,6 +26,8 @@ function UI:ApplyOpacity()
   frame.Bg:SetAlpha(layer)
   frame.InsetBg:SetAlpha(layer)
   frame.TitleBg:SetAlpha(math.min(1, opacity + 0.15))
+  if frame.SidebarBg then frame.SidebarBg:SetAlpha(layer) end
+  if frame.FooterBg then frame.FooterBg:SetAlpha(math.min(1, opacity + 0.10)) end
 end
 
 function UI:SetOpacity(value)
@@ -102,7 +104,7 @@ function UI:FitToSize()
   local row = 44 + REPLY_HEIGHT + lift
   local tiny = width < TINY_WIDTH
   self.effortChip:SetWidth(tiny and 60 or 84)
-  self.modelChip:SetWidth(tiny and 88 or 124)
+  self.modelChip:SetWidth(tiny and 88 or 128)
   self.effortChip:ClearAllPoints()
   self.effortChip:SetPoint("RIGHT", self.send, "LEFT", -4, 0)
   self.activity:ClearAllPoints()
@@ -110,6 +112,10 @@ function UI:FitToSize()
   self.activity:SetPoint("RIGHT", self.frame, "RIGHT", -PAD - 6, 0)
   self.detailScroll:SetPoint("BOTTOMRIGHT", self.frame, "BOTTOMRIGHT", -PAD - 22, 62 + REPLY_HEIGHT + lift)
   self.send:SetWidth(tiny and 60 or 90)
+
+  if self.frame.FooterBg then
+    self.frame.FooterBg:SetHeight(37 + lift)
+  end
 
   self:PlaceHeaderButtons()
   self:PlaceFooter()
@@ -139,7 +145,7 @@ end
 function UI:PlaceNotice()
   local spells = ns.Game and ns.Game.spellBar
   self.notice:ClearAllPoints()
-  self.notice:SetPoint("BOTTOMLEFT", self.frame, "BOTTOMLEFT", 20 + ((spells and (self.spellLift or 0) == 0) and spells:GetWidth() or 0), 16)
+  self.notice:SetPoint("BOTTOMLEFT", self.frame, "BOTTOMLEFT", 18 + ((spells and (self.spellLift or 0) == 0) and spells:GetWidth() or 0), 15)
   local right = self.reload:IsShown() and self.reload or self.reloadHint:IsShown() and self.reloadHint
     or self.modelChip:IsShown() and self.modelChip or self.send
   self.notice:SetPoint("RIGHT", right, "LEFT", -8, 0)
@@ -159,17 +165,23 @@ function UI:ApplyLayout()
   local hidden = ns.db.listHidden
   local listWidth = UI.ListWidth()
   local left = hidden and (PAD + 4) or (listWidth + PAD + 16)
+  local lift = self.spellLift or 0
   self.listScroll:SetShown(not hidden)
+  if self.filterHolder then self.filterHolder:SetShown(not hidden) end
   self.filterBox:SetShown(not hidden)
   self.listScroll:SetWidth(listWidth)
   self.listContent:SetWidth(listWidth)
   self.listEdge:SetShown(not hidden)
+  if self.frame.SidebarBg then
+    self.frame.SidebarBg:SetShown(not hidden)
+    self.frame.SidebarBg:SetWidth(listWidth + PAD + 4)
+    self.frame.SidebarBg:SetPoint("BOTTOMLEFT", 1, 38 + lift)
+  end
   self.title:ClearAllPoints()
   self.titleLeft = left
   self.title:SetPoint("RIGHT", self.frame, "RIGHT", -PAD - 6, 0)
   self:PlaceHeaderButtons()
   self.holder:ClearAllPoints()
-  local lift = self.spellLift or 0
   self.holder:SetPoint("BOTTOMLEFT", self.frame, "BOTTOMLEFT", left - 2, 40 + lift)
   self.holder:SetPoint("BOTTOMRIGHT", self.frame, "BOTTOMRIGHT", -PAD - 6, 40 + lift)
   self.listScroll:SetPoint("BOTTOMLEFT", self.frame, "BOTTOMLEFT", PAD, 40 + lift)
